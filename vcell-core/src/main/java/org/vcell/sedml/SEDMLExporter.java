@@ -864,6 +864,8 @@ public class SEDMLExporter {
 			throw new RuntimeException("Error adding model to SEDML document : " + e.getMessage());
 		}
 	}
+	
+	
 
 	private double getReservedSymbolValue(SymbolTableEntry ste) {
 		cbit.vcell.model.Model vcModel = vcBioModel.getModel();
