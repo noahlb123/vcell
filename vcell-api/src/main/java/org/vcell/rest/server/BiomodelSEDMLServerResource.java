@@ -116,42 +116,34 @@ public class BiomodelSEDMLServerResource extends AbstractServerResource implemen
 			BioModel bioModel = XmlHelper.XMLToBioModel(new XMLSource(biomodelVCML));
 			SimulationContext[] simContexts = bioModel.getSimulationContexts();
 			
-			//SBMLExporter sbmlExporter = new SBMLExporter(bioModel, 1, 2, isSpatial);
-			
+			//return first simulation
 			for (SimulationContext simContext : simContexts) {
 				String simContextName = simContext.getName();
-				// export all applications that are not spatial stochastic
-//				if (!(simContext.getGeometry().getDimension() > 0 && simContext.isStoch())) {
-				if (true) {
-					// check if structure sizes are set. If not, get a structure from the model, and set its size 
-					// (thro' the structureMappings in the geometry of the simContext); invoke the structureSizeEvaluator 
-					// to compute and set the sizes of the remaining structures.
-					if (!simContext.getGeometryContext().isAllSizeSpecifiedPositive()) {
-						Structure structure = simContext.getModel().getStructure(0);
-						double structureSize = 1.0;
-						StructureMapping structMapping = simContext.getGeometryContext().getStructureMapping(structure); 
-						StructureSizeSolver.updateAbsoluteStructureSizes(simContext, structure, structureSize, structMapping.getSizeParameter().getUnitDefinition());
-					}
-					
-					// Export the application itself to SBML, with default overrides
-					String sbmlString = null;
-					int level = 3;
-					int version = 1;
-					boolean isSpatial = simContext.getGeometry().getDimension() > 0 ? true : false;
-					SimulationJob simJob = null;
-					Map<Pair <String, String>, String> l2gMap = null;		// local to global translation map
-					
-					boolean sbmlExportFailed = false;
-					if (bioModel instanceof BioModel) {
-						SBMLExporter sbmlExporter = new SBMLExporter(bioModel, level, version, isSpatial);
-						sbmlExporter.setSelectedSimContext(simContext);
-						sbmlExporter.setSelectedSimulationJob(null);	// no sim job
-						sbmlString = sbmlExporter.getSBMLString();
-						return sbmlString;
-					}
+				if (!simContext.getGeometryContext().isAllSizeSpecifiedPositive()) {
+					Structure structure = simContext.getModel().getStructure(0);
+					double structureSize = 1.0;
+					StructureMapping structMapping = simContext.getGeometryContext().getStructureMapping(structure); 
+					StructureSizeSolver.updateAbsoluteStructureSizes(simContext, structure, structureSize, structMapping.getSizeParameter().getUnitDefinition());
+				}
+				
+				// Export the application itself to SBML, with default overrides
+				String sbmlString = null;
+				int level = 3;
+				int version = 1;
+				boolean isSpatial = simContext.getGeometry().getDimension() > 0 ? true : false;
+				SimulationJob simJob = null;
+				Map<Pair <String, String>, String> l2gMap = null;		// local to global translation map
+				
+				boolean sbmlExportFailed = false;
+				if (bioModel instanceof BioModel) {
+					SBMLExporter sbmlExporter = new SBMLExporter(bioModel, level, version, isSpatial);
+					sbmlExporter.setSelectedSimContext(simContext);
+					sbmlExporter.setSelectedSimulationJob(null);	// no sim job
+					sbmlString = sbmlExporter.getSBMLString();
+					return sbmlString;
 				}
 			}
-			return "server failure";
+			return "server error";
 			
 		} catch (PermissionException e) {
 			e.printStackTrace();
