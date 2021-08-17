@@ -40,6 +40,7 @@ import org.jlibsedml.Model;
 import org.jlibsedml.Notes;
 import org.jlibsedml.Parameter;
 import org.jlibsedml.Plot2D;
+import org.jlibsedml.Plot3D;
 import org.jlibsedml.Range;
 import org.jlibsedml.RepeatedTask;
 import org.jlibsedml.Report;
@@ -48,6 +49,7 @@ import org.jlibsedml.SEDMLTags;
 import org.jlibsedml.SedML;
 import org.jlibsedml.SetValue;
 import org.jlibsedml.SubTask;
+import org.jlibsedml.Surface;
 import org.jlibsedml.Task;
 import org.jlibsedml.UniformRange;
 import org.jlibsedml.UniformTimeCourse;
@@ -72,6 +74,7 @@ import org.vcell.sbml.vcell.StructureSizeSolver;
 import org.vcell.util.FileUtils;
 import org.vcell.util.Pair;
 import org.vcell.util.TokenMangler;
+import org.vcell.util.document.BioModelChildSummary.MathType;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
@@ -149,7 +152,7 @@ public class SEDMLExporter {
 			// invoke the SEDMLEXporter
 			SEDMLExporter sedmlExporter = new SEDMLExporter(bioModel, 1, 1);
 			String absolutePath = "c:\\dan\\SEDML";
-			String sedmlStr = sedmlExporter.getSEDMLFile(absolutePath, false);
+			String sedmlStr = sedmlExporter.getSEDMLFile(absolutePath, false, false);
 //			String absolutePath = ResourceUtil.getUserHomeDir().getAbsolutePath();
 			String outputName = absolutePath+ "\\" + TokenMangler.mangleToSName(bioModel.getName()) + ".sedml";
 			XmlUtil.writeXMLStringToFile(sedmlStr, outputName, true);
@@ -162,7 +165,7 @@ public class SEDMLExporter {
 		}
 	}
 	
-	public String getSEDMLFile(String sPath, boolean bFromOmex) {
+	public String getSEDMLFile(String sPath, boolean bForceVCML, boolean bFromOmex) {
 
 		// Create an SEDMLDocument and create the SEDMLModel from the document, so that other details can be added to it in translateBioModel()
 		SEDMLDocument sedmlDocument = new SEDMLDocument(this.sedmlLevel, this.sedmlVersion);
@@ -173,14 +176,14 @@ public class SEDMLExporter {
 		sedmlModel = sedmlDocument.getSedMLModel();
 
 		
-		translateBioModelToSedML(sPath, bFromOmex);
+		translateBioModelToSedML(sPath, bForceVCML, bFromOmex);
 
 		// write SEDML document into SEDML writer, so that the SEDML str can be retrieved
 		return sedmlDocument.writeDocumentToString();
 	}
 
 
-	private void translateBioModelToSedML(String savePath, boolean bFromOmex) {		// true if invoked for omex export, false if for sedml
+	private void translateBioModelToSedML(String savePath, boolean bForceVCML, boolean bFromOmex) {		// true if invoked for omex export, false if for sedml
 		sbmlFilePathStrAbsoluteList.clear();
 		// models
 		try {
@@ -237,25 +240,35 @@ public class SEDMLExporter {
 					
 					boolean sbmlExportFailed = false;
 					if (vcBioModel instanceof BioModel) {
-						try {
+						
+						if(!bForceVCML) {	// we try to save to SBML
+							try {
+								SBMLExporter sbmlExporter = new SBMLExporter(vcBioModel, level, version, isSpatial);
+								sbmlExporter.setSelectedSimContext(simContext);
+								sbmlExporter.setSelectedSimulationJob(null);	// no sim job
+								try {
+									sbmlString = sbmlExporter.getSBMLString();
+								} catch (RuntimeException e) {
+									sbmlExportFailed = true;
+//									if (simContext.getGeometry().getDimension() > 0 && simContext.getApplicationType() == Application.NETWORK_DETERMINISTIC ) {
+//										continue;	// we skip importing 3D deterministic applications if SBML exceptions
+//									} else {
+//										throw(e);
+//									}
+								}
+								l2gMap = sbmlExporter.getLocalToGlobalTranslationMap();
+							} catch (SbmlException e) {
+								sbmlExportFailed = true;
+//								e.printStackTrace(System.out);
+//								throw new XmlParseException(e);
+							}
+						} else {	// we want to force VCML, we act as if saving to SBML failed
+							sbmlExportFailed = true;
+
 							SBMLExporter sbmlExporter = new SBMLExporter(vcBioModel, level, version, isSpatial);
 							sbmlExporter.setSelectedSimContext(simContext);
 							sbmlExporter.setSelectedSimulationJob(null);	// no sim job
-							try {
-								sbmlString = sbmlExporter.getSBMLString();
-							} catch (RuntimeException e) {
-								sbmlExportFailed = true;
-//								if (simContext.getGeometry().getDimension() > 0 && simContext.getApplicationType() == Application.NETWORK_DETERMINISTIC ) {
-//									continue;	// we skip importing 3D deterministic applications if SBML exceptions
-//								} else {
-//									throw(e);
-//								}
-							}
 							l2gMap = sbmlExporter.getLocalToGlobalTranslationMap();
-						} catch (SbmlException e) {
-							sbmlExportFailed = true;
-//							e.printStackTrace(System.out);
-//							throw new XmlParseException(e);
 						}
 					} else {
 						throw new RuntimeException("unsupported Document Type "+vcBioModel.getClass().getName()+" for SBML export");
@@ -706,10 +719,13 @@ public class SEDMLExporter {
 								sedmlModel.addTask(rt);
 							}
 						} else {						// no math overrides, add basic task.
-							String taskId = "tsk_" + simContextCnt + "_" + simCount;
-							Task sedmlTask = new Task(taskId, vcSimulation.getName(), simContextId, utcSim.getId());
+							// Simulations have unique names in vCell, we can use the sim name as id
+							// actually we must, because we want the imported task id to be the same with the simulation name 
+							// when we export to omex as vcml and then import in CLI
+//							String taskId = "tsk_" + simContextCnt + "_" + simCount;
+							Task sedmlTask = new Task(vcSimulation.getName(), vcSimulation.getName(), simContextId, utcSim.getId());
 							sedmlModel.addTask(sedmlTask);
-							taskRef = taskId;		// to be used later to add dataGenerators : one set of DGs per model (simContext).
+							taskRef = vcSimulation.getName();		// to be used later to add dataGenerators : one set of DGs per model (simContext).
 						}
 
 						// add one dataGenerator for 'time' for entire SEDML model.
@@ -729,13 +745,14 @@ public class SEDMLExporter {
 						// add dataGenerators for species
 						// get species list from SBML model.
 						String dataGenIdPrefix = "dataGen_" + taskRef;
-						if(sbmlExportFailed) {
+						if(sbmlExportFailed) {		// we try vcml export
 							for(SpeciesContext sc : vcModel.getSpeciesContexts()) {
 								String varName = sc.getName();
 								ASTNode varMath = Libsedml.parseFormulaString(varName);
 								String dataGenId = dataGenIdPrefix + "_" + TokenMangler.mangleToSName(varName);
 								DataGenerator dataGen = new DataGenerator(dataGenId, dataGenId, varMath);
-//								dataGen.addVariable(varName);
+								org.jlibsedml.Variable variable = new org.jlibsedml.Variable(varName, varName, taskRef, XmlHelper.getXPathForSpecies(varName));
+								dataGen.addVariable(variable);
 								sedmlModel.addDataGenerator(dataGen);
 								dataGeneratorsOfSim.add(dataGen);
 								varCount++;
@@ -814,29 +831,53 @@ public class SEDMLExporter {
 								
 								sedmlPlot2d.addNote(createNotesElement("Plot of all variables and output functions from application '" + simContext.getName() + "' ; simulation '" + vcSimulation.getName() + "' in VCell model"));
 								sedmlReport.addNote(createNotesElement("Report of all variables and output functions from application '" + simContext.getName() + "' ; simulation '" + vcSimulation.getName() + "' in VCell model"));
-//								List<DataGenerator> dataGenerators = sedmlModel.getDataGenerators();
-								String xDataRef = sedmlModel.getDataGeneratorWithId(DATAGENERATOR_TIME_NAME + "_" + taskRef).getId();
-								String xDatasetXId = "datasetX_" + DATAGENERATOR_TIME_NAME;
-								DataSet dataSet = new DataSet(xDatasetXId, xDatasetXId, xDataRef, xDataRef);
+								DataGenerator dgx = sedmlModel.getDataGeneratorWithId(DATAGENERATOR_TIME_NAME + "_" + taskRef);
+								DataSet dataSet = new DataSet(dgx.getId(), dgx.getName(), dgx.getId(), dgx.getId());
 								sedmlReport.addDataSet(dataSet);
 
 								// add a curve for each dataGenerator in SEDML model
 								int curveCnt = 0;
-								for (DataGenerator dataGenerator : dataGeneratorsOfSim) {
+								// String id, String name, ASTNode math
+								for (DataGenerator dg : dataGeneratorsOfSim) {
 									// no curve for time, since time is xDateReference
-									if (dataGenerator.getId().equals(xDataRef)) {
+									if (dg.getId().equals(dgx.getId())) {
 										continue;
 									}
 									String curveId = "curve_" + curveCnt;
-									String datasetYId = "datasetY_" + curveCnt;
-									Curve curve = new Curve(curveId, curveId, false, false, xDataRef, dataGenerator.getId());
+									Curve curve = new Curve(curveId, curveId, false, false, dgx.getId(), dg.getId());
 									sedmlPlot2d.addCurve(curve);
-									DataSet yDataSet = new DataSet(datasetYId, datasetYId, dataGenerator.getId(), dataGenerator.getId());
+									// id, name, label, dataRef
+									// dataset id    <- data generator id
+									// dataset label <- dataset id
+									// dataset name  <- data generator name
+									DataSet yDataSet = new DataSet(dg.getId(), dg.getName(), dg.getId(), dg.getId());
 									sedmlReport.addDataSet(yDataSet);
 									curveCnt++;
 								}
 								sedmlModel.addOutput(sedmlPlot2d);
 								sedmlModel.addOutput(sedmlReport);
+							}
+						} else {		// spatial deterministic
+							if(simContext.getApplicationType().equals(Application.NETWORK_DETERMINISTIC)) {	// we ignore spatial stochastic (Smoldyn)
+								if(bForceVCML) {
+									String reportId = "report_" + TokenMangler.mangleToSName(vcSimulation.getName());
+									Report sedmlReport = new Report(reportId, simContext.getName() + "report");
+									DataGenerator dgx = sedmlModel.getDataGeneratorWithId(DATAGENERATOR_TIME_NAME + "_" + taskRef);
+									DataSet dataSet = new DataSet(dgx.getId(), dgx.getName(), dgx.getId(), dgx.getId());
+									sedmlReport.addDataSet(dataSet);
+									int surfaceCnt = 0;
+									for (DataGenerator dg : dataGeneratorsOfSim) {
+										// we dealt with time above
+										if (dg.getId().equals(dgx.getId())) {
+											continue;
+										}
+										DataSet yDataSet = new DataSet(dg.getId(), dg.getName(), dg.getId(), dg.getId());
+										sedmlReport.addDataSet(yDataSet);
+
+										surfaceCnt++;
+									}
+									sedmlModel.addOutput(sedmlReport);
+								}
 							}
 						}
 					} // end - for 'sims'
@@ -845,6 +886,9 @@ public class SEDMLExporter {
 					sedmlNotesStr += msg;
 				} // end : if-else simContext is not spatial stochastic
 				simContextCnt++;
+//				if(bForceVCML == true) {	// TODO: should we just go through it just once
+//					break;					// since VCML has all it needs?
+//				}
 			}	// end - for 'simContexts'
 			
         	

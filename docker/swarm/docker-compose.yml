@@ -19,6 +19,8 @@ services:
       - mongodb_port_internal=27017
       - mongodb_database=test
 
+      - webDataPort=${VCELL_WEB_DATA_PORT}
+
       - smtp_hostname=${VCELL_SMTP_HOSTNAME}
       - smtp_port=${VCELL_SMTP_PORT}
       - smtp_emailaddress=${VCELL_SMTP_EMAILADDRESS}
@@ -80,6 +82,9 @@ services:
       - maxPdeJobsPerUser=${VCELL_MAX_PDE_JOBS_PER_USER:-50}
       - simdataCacheSize=${VCELL_SIMDATA_CACHE_SIZE:-10000000}
 
+      - vcell_ssh_cmd_cmdtimeout=${VCELL_SSH_CMD_TIMEOUT:-10000}
+      - vcell_ssh_cmd_restoretimeout=${VCELL_SSH_CMD_RESTORE_TIMEOUT:-5}
+
       - jmsuser=clientUser
       - jmshost_int_internal=activemqint
       - jmsport_int_internal=61616
@@ -102,7 +107,8 @@ services:
     secrets:
       - dbpswd
       - jmspswd
-      - batchuserkeyfile
+      - source: batchuserkeyfile
+        mode: 0400
     networks:
       - vcellnet
     depends_on:
@@ -159,6 +165,9 @@ services:
       - slurm_central_singularity_dir=${VCELL_SLURM_CENTRAL_SINGULARITY_DIR}
       - simdatadir_archive_host=${VCELL_SIMDATADIR_ARCHIVE_HOST}
 
+      - vcell_ssh_cmd_cmdtimeout=${VCELL_SSH_CMD_TIMEOUT:-10000}
+      - vcell_ssh_cmd_restoretimeout=${VCELL_SSH_CMD_RESTORE_TIMEOUT:-5}
+
       - jmsuser=clientUser
       - jmshost_int_internal=activemqint
       - jmsport_int_internal=61616
@@ -176,7 +185,8 @@ services:
     secrets:
       - jmspswd
       - jmsrestpswd # "echo -ne  {activemq console user:passwd} | base64", this is hard-coded in some solvers
-      - batchuserkeyfile
+      - source: batchuserkeyfile
+        mode: 0400
     networks:
       - vcellnet
     depends_on:
@@ -249,6 +259,8 @@ services:
       - mongodb_port_internal=27017
       - mongodb_database=test
 
+      - webDataPort=${VCELL_WEB_DATA_PORT}
+
       - servertype=CombinedData
     ports:
       - "8000" # java remote debugging
@@ -259,6 +271,8 @@ services:
     secrets:
       - dbpswd
       - jmspswd
+      - keystorefile_20210125
+      - keystorepswd
     networks:
       - vcellnet
     depends_on:
