@@ -14,8 +14,8 @@ Link to repositories -
   * API reop - https://github.com/noahlb123/vcell
   * Modelbricks (front end) repo - https://github.com/noahlb123/ModelBricks_source 
 * Main Branches -
-  * API reop - https://github.com/noahlb123/vcell
-  * Modelbricks (front end) repo - https://github.com/noahlb123/ModelBricks_source
+  * API reop - https://github.com/virtualcell/vcell
+  * Modelbricks (front end) repo - https://github.com/vcellmike/ModelBricks_source
 
 Proposal Goals Completed and Merged-
 * Draw Java-script generated cartoons for reactions
