@@ -11,10 +11,10 @@ Links to project -
 
 Link to repositories -
 * GSoC Branches -
-  * API reop - https://github.com/noahlb123/vcell
+  * API repo - https://github.com/noahlb123/vcell
   * Modelbricks (front end) repo - https://github.com/noahlb123/ModelBricks_source 
 * Main Branches -
-  * API reop - https://github.com/virtualcell/vcell
+  * API repo - https://github.com/virtualcell/vcell
   * Modelbricks (front end) repo - https://github.com/vcellmike/ModelBricks_source
 
 Proposal Goals Completed and Merged-
