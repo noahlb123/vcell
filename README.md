@@ -6,8 +6,8 @@
 Project Summary-
 
 Links to project -
-* Testing Build- model-bricks-testing.herokuapp.com
-* Stable Build- modelbricks.org
+* Testing Build- http://model-bricks-testing.herokuapp.com
+* Stable Build- http://www.modelbricks.org
 
 Link to repositories -
 * GSoC Branches -
