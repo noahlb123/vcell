@@ -10,10 +10,10 @@ Links to project -
 * Stable Build- modelbricks.org
 
 Link to repositories -
-* GSoC Branch -
+* GSoC Branches -
   * API reop - https://github.com/noahlb123/vcell
   * Modelbricks (front end) repo - https://github.com/noahlb123/ModelBricks_source 
-* Main Branch -
+* Main Branches -
   * API reop - https://github.com/noahlb123/vcell
   * Modelbricks (front end) repo - https://github.com/noahlb123/ModelBricks_source
 
