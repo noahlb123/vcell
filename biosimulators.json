@@ -1,7 +1,7 @@
 {
   "id": "VCell",
   "name": "Virtual Cell",
-  "version": "7.4.0.14",
+  "version": "7.4.0.19",
   "description": "VCell (Virtual Cell) is a comprehensive platform for modeling cell biological systems that is built on a central database and disseminated as a standalone application",
   "urls": [
     {
@@ -10,7 +10,7 @@
     }
   ],
   "image": {
-    "url": "ghcr.io/virtualcell/biosimulators_vcell:7.4.0.14",
+    "url": "ghcr.io/virtualcell/biosimulators_vcell:7.4.0.19",
     "format": {
       "namespace": "EDAM",
       "id": "format_3973",
@@ -19,6 +19,7 @@
     },
     "operatingSystemType": "Linux"
   },
+  "pythonApi": null,
   "authors": [
     {
       "firstName": "Frank",
@@ -1061,7 +1062,7 @@
       "modelingFrameworks": [
         {
           "namespace": "SBO",
-          "id": "SBO_0000293"
+          "id": "SBO_0000691"
         }
       ],
       "modelFormats": [
@@ -1214,7 +1215,7 @@
       "modelingFrameworks": [
         {
           "namespace": "SBO",
-          "id": "SBO_0000293"
+          "id": "SBO_0000691"
         }
       ],
       "modelFormats": [
@@ -1367,7 +1368,7 @@
       "modelingFrameworks": [
         {
           "namespace": "SBO",
-          "id": "SBO_0000293"
+          "id": "SBO_0000691"
         }
       ],
       "modelFormats": [
@@ -1808,7 +1809,7 @@
       "modelingFrameworks": [
         {
           "namespace": "SBO",
-          "id": "SBO_0000292"
+          "id": "SBO_0000678"
         }
       ],
       "modelFormats": [

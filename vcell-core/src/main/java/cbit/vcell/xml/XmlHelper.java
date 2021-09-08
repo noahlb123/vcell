@@ -552,32 +552,34 @@ public class XmlHelper {
 			throw new Exception("No models found in SED-ML document");
 		}
 		try {
+	        // iterate through all the elements and show them at the console
+	        List<org.jlibsedml.Model> mmm = sedml.getModels();
+	        for(Model mm : mmm) {
+	            System.out.println(mm.toString());
+	        }
+	        List<org.jlibsedml.Simulation> sss = sedml.getSimulations();
+	        for(org.jlibsedml.Simulation ss : sss) {
+	            System.out.println(ss.toString());
+	        }
+	        List<AbstractTask> ttt = sedml.getTasks();
+	        if (ttt.isEmpty()) {
+	        	throw new Exception("No tasks found in SED-ML document");
+	        }
+	        for(AbstractTask tt : ttt) {
+	            System.out.println(tt.toString());
+	        }
+	        List<DataGenerator> ddd = sedml.getDataGenerators();
+	        for(DataGenerator dd : ddd) {
+	            System.out.println(dd.toString());
+	        }
+	        List<Output> ooo = sedml.getOutputs();
+	        for(Output oo : ooo) {
+	            System.out.println(oo.toString());
+	        }
+	        if(ooo.isEmpty()) {
+	        	System.err.println("List of outputs cannot be empty!");
+	        }
 
-//        // iterate through all the elements and show them at the console
-//        List<org.jlibsedml.Model> mmm = sedml.getModels();
-//        for(Model mm : mmm) {
-//            System.out.println(mm.toString());
-//        }
-//        List<org.jlibsedml.Simulation> sss = sedml.getSimulations();
-//        for(org.jlibsedml.Simulation ss : sss) {
-//            System.out.println(ss.toString());
-//        }
-//        List<AbstractTask> ttt = sedml.getTasks();
-//        if (ttt.isEmpty()) {
-//        	throw new Exception("No tasks found in SED-ML document");
-//        }
-//        for(AbstractTask tt : ttt) {
-//            System.out.println(tt.toString());
-//        }
-//        List<DataGenerator> ddd = sedml.getDataGenerators();
-//        for(DataGenerator dd : ddd) {
-////            System.out.println(dd.toString());
-//        }
-//        List<Output> ooo = sedml.getOutputs();
-//        for(Output oo : ooo) {
-////            System.out.println(oo.toString());
-//        }
-//
 			if (tasks == null || tasks.isEmpty()) {
 				// no task selection, we'll import all that we find in the SED-ML
 				tasks = sedml.getTasks();
@@ -707,6 +709,11 @@ public class XmlHelper {
 				if(sedmlOriginalModelLanguage.contentEquals(SUPPORTED_LANGUAGE.VCELL_GENERIC.getURN())) {
 					// we don't need to make a simulation from sedml if we're coming from vcml, we already got all we need
 					// we basically ignore the sedml simulation altogether
+					for (Simulation sim : bioModel.getSimulations()) {
+						if (sim.getName().equals(selectedTask.getSimulationReference())) {
+							sim.setImportedTaskID(selectedTask.getId());
+						}
+					}
 					continue;
 				}
 				// even if we just created the biomodel from the sbml file we have at least one application with initial conditions and stuff
@@ -1252,11 +1259,12 @@ public class XmlHelper {
 	}
 
 	public static String getXPathForListOfSpecies() {
-		return "/vcml:vcml/vcml:model/vcml:listOfSpecies";
+//		return "/vcml:vcml/vcml:model/vcml:listOfSpecies";
+		return "/vcml:vcml/vcml:BioModel/vcml:Model";
 	}
 	
 	public static String getXPathForSpecies(String speciesID) {
-		return getXPathForListOfSpecies() + "/vcml:species[@id='" + speciesID + "']";
+		return getXPathForListOfSpecies() + "/vcml:LocalizedCompound[@Name='" + speciesID + "']";
 	}
 
 //public static String exportSedML(VCDocument vcDoc, int level, int version, String file) throws XmlParseException {
