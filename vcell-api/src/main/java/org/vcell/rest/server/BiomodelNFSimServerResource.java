@@ -24,11 +24,11 @@ import org.restlet.resource.ResourceException;
 import org.vcell.model.rbm.RbmNetworkGenerator;
 import org.vcell.rest.VCellApiApplication;
 import org.vcell.rest.VCellApiApplication.AuthenticationPolicy;
-import org.vcell.rest.common.BiomodelCOMBINEResource;
 import org.vcell.sedml.SEDMLExporter;
 import org.vcell.solver.nfsim.NFsimXMLWriter;
 import org.vcell.util.PermissionException;
 import org.vcell.util.document.User;
+import org.vcell.rest.common.BiomodelNFSimResource;
 
 import cbit.vcell.biomodel.BioModel;
 import cbit.vcell.mapping.SimulationContext;
@@ -39,7 +39,7 @@ import cbit.vcell.solver.SimulationJob;
 import cbit.vcell.xml.XMLSource;
 import cbit.vcell.xml.XmlHelper;
 
-public class BiomodelCOMBINEServerResource extends AbstractServerResource implements BiomodelCOMBINEResource {
+public class BiomodelNFSimServerResource extends AbstractServerResource implements BiomodelNFSimResource {
 
 	private String biomodelid;
 	
@@ -82,22 +82,22 @@ public class BiomodelCOMBINEServerResource extends AbstractServerResource implem
 	}
 
 	@Override
-	@Get(BiomodelCOMBINEResource.APPLICATION_COMBINE_XML)
+	@Get(BiomodelNFSimResource.APPLICATION_NFSim_XML)
 	public StringRepresentation get_xml() {
 		VCellApiApplication application = ((VCellApiApplication)getApplication());
 		User vcellUser = application.getVCellUser(getChallengeResponse(),AuthenticationPolicy.ignoreInvalidCredentials);
-        String vcml = getBiomodelCOMBINE(vcellUser);
+        String vcml = getBiomodelNFSim(vcellUser);
         
         if (vcml != null){
         	String bioModelID = (String)getRequestAttributes().get(VCellApiApplication.BIOMODELID);
         	setAttribute("Content-Disposition", "attachment; filename=\"VCBioModel_"+bioModelID+".vcml\"");
-        	return new StringRepresentation(vcml, BiomodelCOMBINEResource.VCDOC_MEDIATYPE);
+        	return new StringRepresentation(vcml, BiomodelNFSimResource.VCDOC_MEDIATYPE);
         }
         throw new RuntimeException("biomodel not found");
 	}
 
 	
-	private String getBiomodelCOMBINE(User vcellUser) {
+	private String getBiomodelNFSim(User vcellUser) {
 		RestDatabaseService restDatabaseService = ((VCellApiApplication)getApplication()).getRestDatabaseService();
 		try {
 			//Make temporary resource compatible with restDatabaseService so we can re-use
@@ -105,13 +105,13 @@ public class BiomodelCOMBINEServerResource extends AbstractServerResource implem
 				@Override
 				public Map<String, Object> getRequestAttributes() {
 					HashMap<String, Object> hashMap = new HashMap<String, Object>();
-					hashMap.put(VCellApiApplication.BIOMODELID, BiomodelCOMBINEServerResource.this.biomodelid);
+					hashMap.put(VCellApiApplication.BIOMODELID, BiomodelNFSimServerResource.this.biomodelid);
 					return hashMap;
 				}
 				@Override
 				public Request getRequest() {
 					// TODO Auto-generated method stub
-					return BiomodelCOMBINEServerResource.this.getRequest();
+					return BiomodelNFSimServerResource.this.getRequest();
 				}
 			};
 			
@@ -121,18 +121,24 @@ public class BiomodelCOMBINEServerResource extends AbstractServerResource implem
 			String biomodelVCML = restDatabaseService.query(bmsr,vcellUser);
 			BioModel bioModel = XmlHelper.XMLToBioModel(new XMLSource(biomodelVCML));
 			SimulationContext chosenSimContext = bioModel.getSimulationContext(0);
-			Simulation selectedSim = chosenSimContext.getSimulations(0);
-			SimulationTask simTask = new SimulationTask(new SimulationJob(selectedSim, 0, null),0);
-			long randomSeed = 0;	// a fixed seed will allow us to run reproducible simulations
-			//long randomSeed = System.currentTimeMillis();
-			NFsimSimulationOptions nfsimSimulationOptions = new NFsimSimulationOptions();
-			// we get the data we need from the math description
-			boolean bUseLocationMarks = true;
-			Element root = NFsimXMLWriter.writeNFsimXML(simTask, randomSeed, nfsimSimulationOptions, bUseLocationMarks);
-			Document doc = new Document();
-			doc.setRootElement(root);
-			XMLOutputter xmlOut = new XMLOutputter();
-			resultString = xmlOut.outputString(doc);
+			Simulation[] sims = chosenSimContext.getSimulations();
+			try {
+				Simulation selectedSim = sims[0];
+				SimulationTask simTask = new SimulationTask(new SimulationJob(selectedSim, 0, null),0);
+				long randomSeed = 0;	// a fixed seed will allow us to run reproducible simulations
+				//long randomSeed = System.currentTimeMillis();
+				NFsimSimulationOptions nfsimSimulationOptions = new NFsimSimulationOptions();
+				// we get the data we need from the math description
+				boolean bUseLocationMarks = true;
+				Element root = NFsimXMLWriter.writeNFsimXML(simTask, randomSeed, nfsimSimulationOptions, bUseLocationMarks);
+				Document doc = new Document();
+				doc.setRootElement(root);
+				XMLOutputter xmlOut = new XMLOutputter();
+				resultString = xmlOut.outputString(doc);
+			} catch (ArrayIndexOutOfBoundsException e) {
+				resultString = "no simulations";
+			}
+			
 			return resultString;
 			
 		} catch (PermissionException e) {

@@ -136,6 +136,7 @@ public class VCellApiApplication extends WadlApplication {
 	public static final String BNGL_DOWNLOAD = "biomodel.bngl";
 	public static final String OMEX_DOWNLOAD = "biomodel.omex";
 	public static final String MATLAB_DOWNLOAD = "biomodel.matlab";
+	public static final String NFSIM_DOWNLOAD = "biomodel.nfsim";
 	public static final String DIAGRAM_DOWNLOAD = "diagram";
 	public static final String SIMULATION = "simulation";
 	public static final String SIMULATIONID = "simulationid";

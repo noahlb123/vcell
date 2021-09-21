@@ -24,7 +24,6 @@ import org.restlet.resource.ResourceException;
 import org.vcell.model.rbm.RbmNetworkGenerator;
 import org.vcell.rest.VCellApiApplication;
 import org.vcell.rest.VCellApiApplication.AuthenticationPolicy;
-import org.vcell.rest.common.BiomodelCOMBINEResource;
 import org.vcell.sedml.SEDMLExporter;
 import org.vcell.solver.nfsim.NFsimXMLWriter;
 import org.vcell.util.PermissionException;
@@ -39,7 +38,7 @@ import cbit.vcell.solver.SimulationJob;
 import cbit.vcell.xml.XMLSource;
 import cbit.vcell.xml.XmlHelper;
 
-public class BiomodelCOMBINEServerResource extends AbstractServerResource implements BiomodelCOMBINEResource {
+public class BiomodelPdfServerResource extends AbstractServerResource implements BiomodelPdfResource {
 
 	private String biomodelid;
 	
@@ -82,22 +81,22 @@ public class BiomodelCOMBINEServerResource extends AbstractServerResource implem
 	}
 
 	@Override
-	@Get(BiomodelCOMBINEResource.APPLICATION_COMBINE_XML)
+	@Get(BiomodelPdfResource.APPLICATION_Pdf_XML)
 	public StringRepresentation get_xml() {
 		VCellApiApplication application = ((VCellApiApplication)getApplication());
 		User vcellUser = application.getVCellUser(getChallengeResponse(),AuthenticationPolicy.ignoreInvalidCredentials);
-        String vcml = getBiomodelCOMBINE(vcellUser);
+        String vcml = getBiomodelPdf(vcellUser);
         
         if (vcml != null){
         	String bioModelID = (String)getRequestAttributes().get(VCellApiApplication.BIOMODELID);
         	setAttribute("Content-Disposition", "attachment; filename=\"VCBioModel_"+bioModelID+".vcml\"");
-        	return new StringRepresentation(vcml, BiomodelCOMBINEResource.VCDOC_MEDIATYPE);
+        	return new StringRepresentation(vcml, BiomodelPdfResource.VCDOC_MEDIATYPE);
         }
         throw new RuntimeException("biomodel not found");
 	}
 
 	
-	private String getBiomodelCOMBINE(User vcellUser) {
+	private String getBiomodelPdf(User vcellUser) {
 		RestDatabaseService restDatabaseService = ((VCellApiApplication)getApplication()).getRestDatabaseService();
 		try {
 			//Make temporary resource compatible with restDatabaseService so we can re-use
@@ -105,13 +104,13 @@ public class BiomodelCOMBINEServerResource extends AbstractServerResource implem
 				@Override
 				public Map<String, Object> getRequestAttributes() {
 					HashMap<String, Object> hashMap = new HashMap<String, Object>();
-					hashMap.put(VCellApiApplication.BIOMODELID, BiomodelCOMBINEServerResource.this.biomodelid);
+					hashMap.put(VCellApiApplication.BIOMODELID, BiomodelPdfServerResource.this.biomodelid);
 					return hashMap;
 				}
 				@Override
 				public Request getRequest() {
 					// TODO Auto-generated method stub
-					return BiomodelCOMBINEServerResource.this.getRequest();
+					return BiomodelPdfServerResource.this.getRequest();
 				}
 			};
 			

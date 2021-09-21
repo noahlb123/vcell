@@ -19,7 +19,7 @@ public class PDFExtensionFilter extends SelectorExtensionFilter {
 	@Override
 	public void writeBioModel(DocumentManager documentManager, BioModel bioModel, File exportFile, SimulationContext simulationContext) throws Exception {
 		try( FileOutputStream fos = new FileOutputStream(exportFile)) {
-			documentManager.generatePDF(bioModel, fos);		
+			documentManager.generatePDF(bioModel, fos);
 		}
 	}
 }

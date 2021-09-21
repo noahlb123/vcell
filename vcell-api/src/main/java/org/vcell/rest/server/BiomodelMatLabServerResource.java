@@ -27,6 +27,7 @@ import org.vcell.util.document.User;
 import cbit.vcell.biomodel.BioModel;
 import cbit.vcell.mapping.MathMapping;
 import cbit.vcell.mapping.SimulationContext;
+import cbit.vcell.matlab.MatlabOdeFileCoder;
 import cbit.vcell.math.MathDescription;
 import cbit.vcell.solver.Simulation;
 import cbit.vcell.xml.XMLSource;
@@ -116,6 +117,7 @@ public class BiomodelMatLabServerResource extends AbstractServerResource impleme
 			VCAssert.assertFalse(mathDesc.isSpatial(),"spatial");
 			VCAssert.assertFalse(mathDesc.isNonSpatialStoch(),"stochastic");
 			Simulation sim = new Simulation(mathDesc);
+			
 			/*MatlabOdeFileCoder coder = new MatlabOdeFileCoder(sim);
 			java.io.StringWriter sw = new java.io.StringWriter();
 			java.io.PrintWriter pw = new java.io.PrintWriter(sw);
