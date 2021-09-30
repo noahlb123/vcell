@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.net.URLEncoder;
+import java.io.UnsupportedEncodingException;
+
 
 import org.restlet.Request;
 import org.restlet.data.Form;
@@ -19,6 +22,7 @@ import org.restlet.resource.Get;
 import org.restlet.resource.ResourceException;
 import org.vcell.rest.VCellApiApplication;
 import org.vcell.rest.VCellApiApplication.AuthenticationPolicy;
+import cbit.vcell.mapping.SimulationContext;
 import org.vcell.rest.common.BiomodelSBMLResource;
 import org.vcell.sbml.vcell.SBMLExporter;
 import org.vcell.util.PermissionException;
@@ -31,6 +35,7 @@ import cbit.vcell.xml.XmlHelper;
 public class BiomodelSBMLServerResource extends AbstractServerResource implements BiomodelSBMLResource {
 
 	private String biomodelid;
+	private String simName;
 	
     @Override
     protected RepresentationInfo describe(MethodInfo methodInfo,
@@ -48,6 +53,14 @@ public class BiomodelSBMLServerResource extends AbstractServerResource implement
     @Override
     protected void doInit() throws ResourceException {
         String simTaskIdAttribute = getAttribute(VCellApiApplication.BIOMODELID);
+        
+        String appName = getRequest().getOriginalRef().getQueryAsForm(true).getFirstValue("appname");
+        try {
+        	simName = URLEncoder.encode(appName,"UTF-8");
+        } catch (UnsupportedEncodingException e) {
+        	// TODO Auto-generated catch block
+        	e.printStackTrace();
+        }
 
         if (simTaskIdAttribute != null) {
             this.biomodelid = simTaskIdAttribute;
@@ -105,8 +118,8 @@ public class BiomodelSBMLServerResource extends AbstractServerResource implement
 			};
 			String biomodelVCML = restDatabaseService.query(bmsr,vcellUser);
 			BioModel bioModel = XmlHelper.XMLToBioModel(new XMLSource(biomodelVCML));
-			//public SBMLExporter(BioModel argBioModel, int argSbmlLevel, int argSbmlVersion, boolean isSpatial) {
-			SBMLExporter sbmlExporter = new SBMLExporter(bioModel.getSimulationContext(0), 3, 1, bioModel.getSimulationContext(0).getGeometryContext().getGeometry().getDimension()>0);
+			SimulationContext sim = bioModel.getSimulationContexts(simName);
+			SBMLExporter sbmlExporter = new SBMLExporter(sim, 3, 1, sim.getGeometryContext().getGeometry().getDimension()>0);
 			return sbmlExporter.getSBMLString();
 		} catch (PermissionException e) {
 			e.printStackTrace();
