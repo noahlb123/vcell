@@ -2,6 +2,8 @@ package org.vcell.rest.server;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -42,6 +44,7 @@ import cbit.vcell.xml.XmlHelper;
 public class BiomodelNFSimServerResource extends AbstractServerResource implements BiomodelNFSimResource {
 
 	private String biomodelid;
+	private String simName;
 	
     @Override
     protected RepresentationInfo describe(MethodInfo methodInfo,
@@ -59,7 +62,15 @@ public class BiomodelNFSimServerResource extends AbstractServerResource implemen
     @Override
     protected void doInit() throws ResourceException {
         String simTaskIdAttribute = getAttribute(VCellApiApplication.BIOMODELID);
-
+        
+        String appName = getRequest().getOriginalRef().getQueryAsForm(true).getFirstValue("appname");
+        try {
+        	simName = URLEncoder.encode(appName,"UTF-8");
+        } catch (UnsupportedEncodingException e) {
+        	// TODO Auto-generated catch block
+        	e.printStackTrace();
+        }
+        
         if (simTaskIdAttribute != null) {
             this.biomodelid = simTaskIdAttribute;
             setName("Resource for biomodel \"" + this.biomodelid + "\"");
@@ -120,7 +131,7 @@ public class BiomodelNFSimServerResource extends AbstractServerResource implemen
 			int sedmlVersion = 2;
 			String biomodelVCML = restDatabaseService.query(bmsr,vcellUser);
 			BioModel bioModel = XmlHelper.XMLToBioModel(new XMLSource(biomodelVCML));
-			SimulationContext chosenSimContext = bioModel.getSimulationContext(0);
+			SimulationContext chosenSimContext = bioModel.getSimulationContexts(simName);
 			Simulation[] sims = chosenSimContext.getSimulations();
 			try {
 				Simulation selectedSim = sims[0];
