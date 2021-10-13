@@ -2,11 +2,6 @@ package org.vcell.rest.server;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
-<<<<<<< HEAD
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
-=======
->>>>>>> upstream/master
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -38,10 +33,6 @@ import cbit.vcell.xml.XmlHelper;
 public class BiomodelBNGLServerResource extends AbstractServerResource implements BiomodelBNGLResource {
 
 	private String biomodelid;
-<<<<<<< HEAD
-	private String simName;
-=======
->>>>>>> upstream/master
 	
     @Override
     protected RepresentationInfo describe(MethodInfo methodInfo,
@@ -59,17 +50,6 @@ public class BiomodelBNGLServerResource extends AbstractServerResource implement
     @Override
     protected void doInit() throws ResourceException {
         String simTaskIdAttribute = getAttribute(VCellApiApplication.BIOMODELID);
-<<<<<<< HEAD
-        
-        String appName = getRequest().getOriginalRef().getQueryAsForm(true).getFirstValue("appname");
-        try {
-        	simName = URLEncoder.encode(appName,"UTF-8");
-        } catch (UnsupportedEncodingException e) {
-        	// TODO Auto-generated catch block
-        	e.printStackTrace();
-        }
-=======
->>>>>>> upstream/master
 
         if (simTaskIdAttribute != null) {
             this.biomodelid = simTaskIdAttribute;
@@ -130,11 +110,7 @@ public class BiomodelBNGLServerResource extends AbstractServerResource implement
 			PrintWriter pw = new PrintWriter(bnglStringWriter);
 			String biomodelVCML = restDatabaseService.query(bmsr,vcellUser);
 			BioModel bioModel = XmlHelper.XMLToBioModel(new XMLSource(biomodelVCML));
-<<<<<<< HEAD
-			SimulationContext chosenSimContext = bioModel.getSimulationContexts(simName);
-=======
 			SimulationContext chosenSimContext = bioModel.getSimulationContext(0);
->>>>>>> upstream/master
 			RbmNetworkGenerator.writeBngl(chosenSimContext, pw, false, true);
 			String resultString = bnglStringWriter.toString();
 			return resultString;
@@ -148,8 +124,4 @@ public class BiomodelBNGLServerResource extends AbstractServerResource implement
 	}
 
 
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> upstream/master
