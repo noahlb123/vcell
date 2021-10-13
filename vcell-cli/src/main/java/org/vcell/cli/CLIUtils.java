@@ -28,6 +28,8 @@ import java.util.zip.ZipOutputStream;
 //import java.nio.file.Files;
 
 public class CLIUtils {
+	// timeout for compiled solver running long jobs; default 12 hours
+	public static long EXECUTABLE_MAX_WALLCLOK_MILLIS = 10000;
 
     // Docker hardcode path
     // Note: Docker Working Directory and Singularity working directory works in different way.
@@ -344,7 +346,7 @@ public class CLIUtils {
                             }
 
                             CLIUtils.updateDatasetStatusYml(sedmlLocation, oo.getId(), dataset.getId(), Status.SUCCEEDED, outDir);
-                            CLIUtils.updateTaskStatusYml(sedmlLocation, task.getId(), Status.SUCCEEDED, outDir);
+                           // CLIUtils.updateTaskStatusYml(sedmlLocation, task.getId(), Status.SUCCEEDED, outDir);
                         }
                         if (!supportedDataset) {
                             System.err.println("Dataset " + dataset.getId() + " references unsupported RepeatedTask and is being skipped");
@@ -359,8 +361,13 @@ public class CLIUtils {
                         double[] row = new double[vars.size()];
                         
                         // Handling row labels that contains ","
-                        if (dataset.getId().contains(",")) sb.append("\"" + dataset.getId() + "\"").append(",");
-                        else sb.append(dataset.getId()).append(",");
+                        if (dataset.getId().startsWith("__data_set__")) {
+                        	if (dataset.getLabel().contains(",")) sb.append("\"" + dataset.getLabel() + "\"").append(",");
+                        	else sb.append(dataset.getLabel()).append(",");
+                        } else {
+                        	if (dataset.getId().contains(",")) sb.append("\"" + dataset.getId() + "\"").append(",");
+                        	else sb.append(dataset.getId()).append(",");
+                        }
                         if (dataset.getLabel().contains(",")) sb.append("\"" + dataset.getLabel() + "\"").append(",");
                         else sb.append(dataset.getLabel()).append(",");
                         
@@ -645,8 +652,8 @@ public class CLIUtils {
         printProcessErrors(process, "","Failed generating status YAML\n");
     }
 
-    public static void updateTaskStatusYml(String sedmlName, String taskName, Status taskStatus, String outDir) throws IOException, InterruptedException {
-        Process process = execShellCommand(new String[]{python, statusPath.toString(), "updateTaskStatus", sedmlName, taskName, taskStatus.toString(), outDir}).start();
+    public static void updateTaskStatusYml(String sedmlName, String taskName, Status taskStatus, String outDir ,String duration , String algorithm) throws IOException, InterruptedException {
+        Process process = execShellCommand(new String[]{python, statusPath.toString(), "updateTaskStatus", sedmlName, taskName, taskStatus.toString(), outDir,duration,algorithm}).start();
         printProcessErrors(process, "","Failed updating task status YAML\n");
 
     }
@@ -671,6 +678,11 @@ public class CLIUtils {
         printProcessErrors(process, "","");
     }
 
+    public static void updateErrorMessage(String sedmlName, String id, String outDir, String name, String stdOut , String stdErr) throws IOException, InterruptedException {
+        Process process = execShellCommand(new String[]{python, statusPath.toString(), "updateErrorMessage", sedmlName,id,outDir,name,stdOut,stdErr}).start();
+        printProcessErrors(process, "","Failed updating task status YAML\n");
+
+    }
 
     private static ArrayList<File> listFilesForFolder(File dirPath, String extensionType) {
         File dir = new File(String.valueOf(dirPath));

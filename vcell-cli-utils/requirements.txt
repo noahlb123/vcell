@@ -1,8 +1,9 @@
-biosimulators_utils>=0.1.85
+biosimulators_utils>=0.1.127
 fire
 pyyaml
 pandas
 matplotlib
 seaborn
-python_libsedml
-python_libsbml
+python-libsedml
+python-libsbml
+deprecated

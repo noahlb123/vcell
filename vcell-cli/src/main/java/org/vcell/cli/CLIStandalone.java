@@ -5,28 +5,41 @@ import cbit.vcell.xml.ExternalDocInfo;
 import org.apache.commons.lang3.ArrayUtils;
 import org.jlibsedml.*;
 import org.vcell.cli.vcml.VCMLHandler;
+//import org.vcell.util.FileUtils;
 import org.vcell.cli.vcml.VcmlOmexConversion;
+import org.vcell.util.exe.Executable;
 
 import com.lowagie.text.pdf.crypto.RuntimeCryptoException;
 
-import org.apache.commons.io.FileUtils;
+//import org.apache.commons.io.FileUtils;
 import java.io.File;
 import java.io.FilenameFilter;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 public class CLIStandalone {
     public static void main(String[] args) {
 
+    	if(args == null || args.length < 4) {		// -i <input> -o <output>
+    		System.err.println(CLIHandler.usage);
+    		System.exit(1);
+    	}
 
         if(args[0].toLowerCase().equals("convert")) {
             // VCML to OMex conversion
-
-            VcmlOmexConversion.parseArgsAndConvert(ArrayUtils.remove(args, 0));
+        	try {
+        		VcmlOmexConversion.parseArgsAndConvert(ArrayUtils.remove(args, 0));
+        	} catch(IOException e) {
+        		e.printStackTrace(System.err);
+        	}
         }
 
         else {
@@ -38,8 +51,12 @@ public class CLIStandalone {
             } catch (Exception e1) {
                 // Non file or invalid argument received, let it pass, CLIHandler will handle the invalid (or non file) arguments
             }
+            
+            Executable.setTimeoutMS(CLIUtils.EXECUTABLE_MAX_WALLCLOK_MILLIS);
 
             if (input != null && input.isDirectory()) {
+            	String outputDir = args[3];
+            	
                 FilenameFilter filter = (f, name) -> name.endsWith(".omex") || name.endsWith(".vcml");
                 String[] inputFiles = input.list(filter);
                 if (inputFiles == null) System.out.println("No input files found in the directory");
@@ -50,7 +67,10 @@ public class CLIStandalone {
                     args[1] = file.toString();
                     try {
                         if (inputFile.endsWith("omex")) {
-                            singleExecOmex(args);
+                			String bioModelBaseName = org.vcell.util.FileUtils.getBaseName(inputFile);
+                			args[3] = outputDir + File.separator + bioModelBaseName;
+                			Files.createDirectories(Paths.get(args[3]));
+                            singleExecOmex(outputDir, args);
                         }
                         if (inputFile.endsWith("vcml")) {
                             singleExecVcml(args);
@@ -62,7 +82,7 @@ public class CLIStandalone {
             } else {
                 try {
                     if (input == null || input.toString().endsWith("omex")) {
-                        singleExecOmex(args);
+                        singleExecOmex(args[3], args);
                     } else if (input.toString().endsWith("vcml")) {
                         singleExecVcml(args);
                     } else {
@@ -76,11 +96,26 @@ public class CLIStandalone {
         }
     }
 
+    private static boolean isBatchExecution(String outputBaseDir) {
+    	Path path = Paths.get(outputBaseDir);
+    	boolean isDirectory = Files.isDirectory(path);
+    	return isDirectory;
+    }
+    
+    // we just make a list with the omex files that failed
+    private static void writeErrorList(String outputBaseDir, String s) throws IOException {
+    	if(isBatchExecution(outputBaseDir)) {
+    		String dest = outputBaseDir + File.separator + "errorLog.txt";
+    		Files.write(Paths.get(dest), (s + "\n").getBytes(), 
+    			StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+    	}
+   	}
 
-    private static void singleExecOmex(String[] args) throws Exception {
+    private static void singleExecOmex(String outputBaseDir, String[] args) throws Exception {
         OmexHandler omexHandler = null;
         CLIHandler cliHandler;
         String inputFile;
+        String bioModelBaseName = "";		// input file without the path
         String outputDir;
         ArrayList<String> sedmlLocations;
         int nModels;
@@ -99,6 +134,7 @@ public class CLIStandalone {
         try {
             cliHandler = new CLIHandler(args);
             inputFile = cliHandler.getInputFilePath();
+            bioModelBaseName = org.vcell.util.FileUtils.getBaseName(inputFile);
             outputDir = cliHandler.getOutputDirPath();
             sedmlPath2d3d = Paths.get(outputDir, "temp");
             System.out.println("VCell CLI input archive " + inputFile);
@@ -112,6 +148,7 @@ public class CLIStandalone {
             assert omexHandler != null;
             omexHandler.deleteExtractedOmex();
             String error = exc.getMessage() + ", error for archive " + args[1];
+            writeErrorList(outputBaseDir, bioModelBaseName);
             throw new Exception(error);
         }
         // from here on, we need to collect errors, since some subtasks may succeed while other do not
@@ -182,7 +219,12 @@ public class CLIStandalone {
             // we send both the whole OMEX file and the extracted SEDML file path
             // XmlHelper code uses two types of resolvers to handle absolute or relative paths
             ExternalDocInfo externalDocInfo = new ExternalDocInfo(new File(inputFile), true);
-            resultsHash = solverHandler.simulateAllTasks(externalDocInfo, sedml, outDirForCurrentSedml, outputDir, sedmlLocation);
+            resultsHash = new LinkedHashMap<String, ODESolverResultSet>();
+            try {
+            	resultsHash = solverHandler.simulateAllTasks(externalDocInfo, sedml, outDirForCurrentSedml, outputDir, sedmlLocation);
+            } catch(Exception e) {
+            	somethingFailed = true;
+            }
             if (resultsHash.size() != 0) {
                 reportsHash = CLIUtils.generateReportsAsCSV(sedml, resultsHash, outDirForCurrentSedml, outputDir, sedmlLocation);
 
@@ -198,7 +240,7 @@ public class CLIStandalone {
             }
 
             // removing temp path generated from python
-            FileUtils.deleteDirectory(new File(String.valueOf(sedmlPath2d3d)));
+            org.apache.commons.io.FileUtils.deleteDirectory(new File(String.valueOf(sedmlPath2d3d)));
 
             // archiving res files
             CLIUtils.zipResFiles(new File(outputDir));
@@ -212,6 +254,7 @@ public class CLIStandalone {
             String error = "One or more errors encountered while executing archive " + args[1];
             CLIUtils.finalStatusUpdate(CLIUtils.Status.FAILED, outputDir);
             System.err.println(error);
+            writeErrorList(outputBaseDir, bioModelBaseName);
         }
     }
 

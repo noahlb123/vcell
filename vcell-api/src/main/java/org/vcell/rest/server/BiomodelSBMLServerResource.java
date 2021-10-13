@@ -29,13 +29,18 @@ import org.vcell.util.PermissionException;
 import org.vcell.util.document.User;
 
 import cbit.vcell.biomodel.BioModel;
+import cbit.vcell.mapping.SimulationContext;
 import cbit.vcell.xml.XMLSource;
 import cbit.vcell.xml.XmlHelper;
 
 public class BiomodelSBMLServerResource extends AbstractServerResource implements BiomodelSBMLResource {
 
 	private String biomodelid;
+<<<<<<< HEAD
 	private String simName;
+=======
+	private String appName;
+>>>>>>> upstream/master
 	
     @Override
     protected RepresentationInfo describe(MethodInfo methodInfo,
@@ -53,6 +58,7 @@ public class BiomodelSBMLServerResource extends AbstractServerResource implement
     @Override
     protected void doInit() throws ResourceException {
         String simTaskIdAttribute = getAttribute(VCellApiApplication.BIOMODELID);
+<<<<<<< HEAD
         
         String appName = getRequest().getOriginalRef().getQueryAsForm(true).getFirstValue("appname");
         try {
@@ -62,6 +68,9 @@ public class BiomodelSBMLServerResource extends AbstractServerResource implement
         	e.printStackTrace();
         }
 
+=======
+        appName = getRequest().getOriginalRef().getQueryAsForm(true).getFirstValue("appname");
+>>>>>>> upstream/master
         if (simTaskIdAttribute != null) {
             this.biomodelid = simTaskIdAttribute;
             setName("Resource for biomodel \"" + this.biomodelid + "\"");
@@ -118,9 +127,21 @@ public class BiomodelSBMLServerResource extends AbstractServerResource implement
 			};
 			String biomodelVCML = restDatabaseService.query(bmsr,vcellUser);
 			BioModel bioModel = XmlHelper.XMLToBioModel(new XMLSource(biomodelVCML));
+<<<<<<< HEAD
 			SimulationContext sim = bioModel.getSimulationContexts(simName);
 			SBMLExporter sbmlExporter = new SBMLExporter(sim, 3, 1, sim.getGeometryContext().getGeometry().getDimension()>0);
 			return sbmlExporter.getSBMLString();
+=======
+			//public SBMLExporter(BioModel argBioModel, int argSbmlLevel, int argSbmlVersion, boolean isSpatial) {
+			SimulationContext simulationContext = null;
+			if(appName != null) {
+				simulationContext = bioModel.getSimulationContext(appName);
+			}else {
+				simulationContext = bioModel.getSimulationContext(0);
+			}
+			SBMLExporter sbmlExporter = new SBMLExporter(simulationContext, 3, 1, simulationContext.getGeometryContext().getGeometry().getDimension()>0);
+			return sbmlExporter.getSBMLString();			
+>>>>>>> upstream/master
 		} catch (PermissionException e) {
 			e.printStackTrace();
 			throw new ResourceException(Status.CLIENT_ERROR_UNAUTHORIZED, "permission denied to requested resource");

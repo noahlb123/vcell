@@ -671,6 +671,8 @@ public class XmlHelper {
 					}
 				}
 
+				// we make a biomodel for each task; if there are many simulations, probably 
+				// only one will match the selected task id, the others are parasites and must not be run
 				BioModel bioModel = null;
 				boolean justMade = false;
 				String newMdl = resolver.getModelString(sedmlOriginalModel);
@@ -710,7 +712,8 @@ public class XmlHelper {
 					// we don't need to make a simulation from sedml if we're coming from vcml, we already got all we need
 					// we basically ignore the sedml simulation altogether
 					for (Simulation sim : bioModel.getSimulations()) {
-						if (sim.getName().equals(selectedTask.getSimulationReference())) {
+						if (sim.getName().equals(selectedTask.getName())) {
+							System.out.println(" --- selected task - name: " + selectedTask.getName() + ", id: " + selectedTask.getId());
 							sim.setImportedTaskID(selectedTask.getId());
 						}
 					}
@@ -1258,13 +1261,26 @@ public class XmlHelper {
 		}
 	}
 
-	public static String getXPathForListOfSpecies() {
-//		return "/vcml:vcml/vcml:model/vcml:listOfSpecies";
+	public static String getXPathForModel() {
 		return "/vcml:vcml/vcml:BioModel/vcml:Model";
+	}
+	public static String getXPathForSimulationSpecs() {
+		return "/vcml:vcml/vcml:BioModel/vcml:SimulationSpec";
+	}
+	
+	public static String getXPathForSimulationSpec(String simulationSpecID) {
+		return getXPathForSimulationSpecs() + "[@Name='" + simulationSpecID + "']";
+	}
+
+	public static String getXPathForOutputFunctions(String simulationSpecID) {
+		return getXPathForSimulationSpec(simulationSpecID) + "/vcml:OutputFunctions";
 	}
 	
 	public static String getXPathForSpecies(String speciesID) {
-		return getXPathForListOfSpecies() + "/vcml:LocalizedCompound[@Name='" + speciesID + "']";
+		return getXPathForModel() + "/vcml:LocalizedCompound[@Name='" + speciesID + "']";
+	}
+	public static String getXPathForOutputFunction(String simulationSpecID, String outputFunctionID) {
+		return getXPathForOutputFunctions(simulationSpecID) + "/vcml:AnnotatedFunction[@Name='" + outputFunctionID + "']";
 	}
 
 //public static String exportSedML(VCDocument vcDoc, int level, int version, String file) throws XmlParseException {

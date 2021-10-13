@@ -6,6 +6,7 @@ from biosimulators_utils.sedml.io import SedmlSimulationReader, SedmlSimulationW
 from biosimulators_utils.combine.utils import get_sedml_contents
 from biosimulators_utils.combine.io import CombineArchiveReader
 from biosimulators_utils.sedml.data_model import Output, Report, Plot2D, Plot3D, DataSet
+from biosimulators_utils.config import Config
 import fire
 import glob
 import os
@@ -19,6 +20,8 @@ import libsedml as lsed
 from libsedml import SedReport, SedPlot2D
 import sys
 import stat
+from pathlib import Path
+from deprecated import deprecated
 
 # Move status PY code here
 # Create temp directory
@@ -32,15 +35,21 @@ def gen_sedml_2d_3d(omex_file_path, base_out_path):
         os.mkdir(temp_path, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
 
     # defining archive
+    config = Config(VALIDATE_OMEX_MANIFESTS=True)
     archive = CombineArchiveReader().run(in_file=omex_file_path, out_dir=temp_path,
-                                         try_reading_as_plain_zip_archive=False)
+                                         config=config)
 
     # determine files to execute
     sedml_contents = get_sedml_contents(archive)
 
     for i_content, content in enumerate(sedml_contents):
         content_filename = os.path.join(temp_path, content.location)
-        sedml_name = content.location.split('/')[1].split('.')[0]
+        if '/' in content.location:
+            sedml_name = content.location.split('/')[1].split('.')[0]
+        else:
+            sedml_name = content.location.split('.')[0]
+#        sedml_name = Path(content.location).stem
+        print("name: ", sedml_name, file=sys.stdout)
 
         doc = SedmlSimulationReader().run(content_filename)
         for output in doc.outputs:
@@ -80,8 +89,9 @@ def gen_sedml_2d_3d(omex_file_path, base_out_path):
 
 
 def exec_plot_output_sed_doc(omex_file_path, base_out_path):
+    config = Config(VALIDATE_OMEX_MANIFESTS=False)
     archive = CombineArchiveReader().run(in_file=omex_file_path, out_dir=tmp_dir,
-                                         try_reading_as_plain_zip_archive=True)
+                                         config=config)
 
     # determine files to execute
     sedml_contents = get_sedml_contents(archive)
@@ -115,9 +125,9 @@ def exec_plot_output_sed_doc(omex_file_path, base_out_path):
                 # create pseudo-report for ReportWriter
 
                 data_set_results = DataSetResults()
-
+                
                 for col in list(data_set_df.columns):
-                    data_set_results[col] = data_set_df[col].values
+                    data_set_results[col] = data_set_df[col].to_numpy(dtype='float64')
 
                 # append to data structure of report results
 
@@ -134,7 +144,8 @@ def exec_plot_output_sed_doc(omex_file_path, base_out_path):
                                    data_set_results,
                                    base_out_path,
                                    rel_path,
-                                   format='h5')
+                                   format='h5',
+                                   type=Plot2D)
                 os.rename(report_filename,
                           report_filename.replace('__plot__', ''))
 
@@ -157,7 +168,7 @@ def exec_plot_output_sed_doc(omex_file_path, base_out_path):
 
                 data_set_results = DataSetResults()
                 for col in list(data_set_df.columns):
-                    data_set_results[col] = data_set_df[col].values
+                    data_set_results[col] = data_set_df[col].to_numpy(dtype='float64')
                 
                 rel_path = os.path.join(content.location, report.id)
                 if len(rel_path.split("./")) > 1:
@@ -166,14 +177,16 @@ def exec_plot_output_sed_doc(omex_file_path, base_out_path):
                                    data_set_results,
                                    base_out_path,
                                    rel_path,
-                                   format='h5')
+                                   format='h5',
+                                   type=Report)
                 
                 
-
+@deprecated("This method is no longer used")
 def exec_sed_doc(omex_file_path, base_out_path):
     # defining archive
+    config = Config(VALIDATE_OMEX_MANIFESTS=False)
     archive = CombineArchiveReader().run(in_file=omex_file_path, out_dir=tmp_dir,
-                                         try_reading_as_plain_zip_archive=True)
+                                         config=config)
 
     # determine files to execute
     sedml_contents = get_sedml_contents(archive)

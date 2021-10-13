@@ -23,6 +23,7 @@ import org.vcell.cli.vcml.VCMLHandler;
 import org.vcell.sbml.vcell.SBMLImportException;
 import org.vcell.sbml.vcell.SBMLImporter;
 import org.vcell.util.document.VCDocument;
+import org.vcell.util.exe.Executable;
 
 import java.io.File;
 import java.util.HashMap;
@@ -69,6 +70,8 @@ public class SolverHandler {
             throw e;
         }
 
+        int simulationCount = 0;
+        int bioModelCount = 0;
         for (VCDocument doc : docs) {
             try {
                 sanityCheck(doc);
@@ -76,16 +79,23 @@ public class SolverHandler {
                 e.printStackTrace(System.err);
 //                continue;
             }
-        docName = doc.getName();
+            docName = doc.getName();
             bioModel = (BioModel) doc;
             sims = bioModel.getSimulations();
             for (Simulation sim : sims) {
+            	if(sim.getImportedTaskID() == null) {
+            		// this is a simulation not matching the imported task, so we skip it
+            		continue;
+            	}
                 sim = new TempSimulation(sim, false);
                 SolverTaskDescription std = sim.getSolverTaskDescription();
                 SolverDescription sd = std.getSolverDescription();
 //                if(sim.getImportedTaskID() == null) {
 //                	sim.setImportedTaskID(sim.getName());
 //                }
+                
+                long startTime = System.currentTimeMillis();
+                
                 String kisao = sd.getKisao();
                 SimulationJob simJob = new SimulationJob(sim, 0, null);
                 SimulationTask simTask = new SimulationTask(simJob, 0);
@@ -119,21 +129,39 @@ public class SolverHandler {
                         // this should actually never happen...
                         throw new Exception("Unexpected solver: " + kisao + " " + solver);
                     }
+                   
                     if (solver.getSolverStatus().getStatus() == SolverStatus.SOLVER_FINISHED) {
                         System.out.println("Succesful execution: Model '" + docName + "' Task '" + sim.getDescription() + "'.");
 
-                        CLIUtils.updateTaskStatusYml(sedmlLocation, sim.getImportedTaskID(), CLIUtils.Status.SUCCEEDED, outDir);
-
+                        long endTime = System.currentTimeMillis();
+                		long elapsedTime = endTime - startTime;
+                		long duration = Math.round((elapsedTime /1000) % 60);
+                		String msg = "Running simulation " + simTask.getSimulation().getName() + ", " + elapsedTime + " ms";
+                		System.out.println(msg);
+                        CLIUtils.updateTaskStatusYml(sedmlLocation, sim.getImportedTaskID(), CLIUtils.Status.SUCCEEDED, outDir , Long.toString(duration) ,kisao);
+                        CLIUtils.updateErrorMessage(sedmlLocation, sim.getImportedTaskID(),outDir,"task", msg, "");
                         CLIUtils.drawBreakLine("-", 100);
                     } else {
                         System.err.println("Solver status: " + solver.getSolverStatus().getStatus());
                         System.err.println("Solver message: " + solver.getSolverStatus().getSimulationMessage().getDisplayMessage());
+                        CLIUtils.updateErrorMessage(sedmlLocation, sim.getImportedTaskID(),outDir, "task","", solver.getSolverStatus().getSimulationMessage().getDisplayMessage());
                         throw new Exception();
                     }
                     CLIUtils.finalStatusUpdate( CLIUtils.Status.SUCCEEDED, outDir);
                 } catch (Exception e) {
                     System.err.println("Failed execution: Model '" + docName + "' Task '" + sim.getDescription() + "'.");
-                    CLIUtils.updateTaskStatusYml(sedmlLocation, sim.getImportedTaskID(), CLIUtils.Status.FAILED, outDir);
+                    
+                    long endTime = System.currentTimeMillis();
+            		long elapsedTime = endTime - startTime;
+            		long duration = Math.round((elapsedTime /1000) % 60);
+            		String msg = "Running simulation " + simTask.getSimulation().getName() + ", " + elapsedTime + " ms";
+            		System.out.println(msg);
+                    
+            		if(sim.getImportedTaskID() == null) {
+            			System.err.println("null imported task id, this should never happen");
+            		} else {
+            			CLIUtils.updateTaskStatusYml(sedmlLocation, sim.getImportedTaskID(), CLIUtils.Status.FAILED, outDir ,  Long.toString(duration),kisao);
+            		}
                     CLIUtils.finalStatusUpdate( CLIUtils.Status.FAILED, outDir);
                     if (e.getMessage() != null) {
                         // something else than failure caught by solver instance during execution
@@ -146,9 +174,11 @@ public class SolverHandler {
                 }
 
                 CLIUtils.removeIntermediarySimFiles(outputDirForSedml);
-
+                simulationCount++;
             }
+            bioModelCount++;
         }
+        System.out.println("Ran " + simulationCount + " simulations for " + bioModelCount + " biomodels.");
         return resultsHash;
     }
 
