@@ -76,10 +76,6 @@ public class ModelUnitConverter {
 			jscl.math.Generic g1=jsclExpression.expand().simplify();
 			Expression newRate=new Expression(SymbolUtils.getRestoredStringJSCL(g1.toString()));
 			newRate.bindExpression(reactionStep);
-<<<<<<< HEAD
-=======
-		//	reactionStep.getKinetics().getKineticsParameterFromRole(Kinetics.ROLE_ReactionRate).setExpression(newRate.flatten());
->>>>>>> upstream/master
 			if (reactionStep.getKinetics().getKineticsParameterFromRole(Kinetics.ROLE_ReactionRate) != null) {
 				reactionStep.getKinetics().getKineticsParameterFromRole(Kinetics.ROLE_ReactionRate).setExpression(newRate.flatten());
 			}

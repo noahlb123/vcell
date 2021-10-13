@@ -24,10 +24,10 @@ import org.restlet.resource.ResourceException;
 import org.vcell.model.rbm.RbmNetworkGenerator;
 import org.vcell.rest.VCellApiApplication;
 import org.vcell.rest.VCellApiApplication.AuthenticationPolicy;
-import org.vcell.sedml.SEDMLExporter;
 import org.vcell.solver.nfsim.NFsimXMLWriter;
 import org.vcell.util.PermissionException;
 import org.vcell.util.document.User;
+import org.vcell.rest.common.BiomodelPdfResource;
 
 import cbit.vcell.biomodel.BioModel;
 import cbit.vcell.mapping.SimulationContext;
