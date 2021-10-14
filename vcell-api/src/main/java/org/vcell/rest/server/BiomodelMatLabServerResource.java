@@ -118,18 +118,18 @@ public class BiomodelMatLabServerResource extends AbstractServerResource impleme
 			VCAssert.assertFalse(mathDesc.isNonSpatialStoch(),"stochastic");
 			Simulation sim = new Simulation(mathDesc);
 			
-			/*MatlabOdeFileCoder coder = new MatlabOdeFileCoder(sim);
+			MatlabOdeFileCoder coder = new MatlabOdeFileCoder(sim);
 			java.io.StringWriter sw = new java.io.StringWriter();
 			java.io.PrintWriter pw = new java.io.PrintWriter(sw);
-			String functionName = exportFile.getName();
+			String functionName = "temporary matlab function name";
 			if (functionName.endsWith(".m")){
 				functionName = functionName.substring(0,functionName.length()-2);
 			}
 			coder.write_V6_MFile(pw,functionName,simulationContext.getOutputFunctionContext());
 			pw.flush();
 			pw.close();
-			String resultString = sw.getBuffer().toString();*/
-			return "server error";
+			String resultString = sw.getBuffer().toString();
+			return resultString;
 		} catch (PermissionException e) {
 			e.printStackTrace();
 			throw new ResourceException(Status.CLIENT_ERROR_UNAUTHORIZED, "permission denied to requested resource");

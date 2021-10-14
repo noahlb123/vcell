@@ -32,6 +32,7 @@ import org.vcell.rest.common.BiomodelPdfResource;
 import cbit.vcell.biomodel.BioModel;
 import cbit.vcell.mapping.SimulationContext;
 import cbit.vcell.messaging.server.SimulationTask;
+import cbit.vcell.publish.PDFWriter;
 import cbit.vcell.solver.NFsimSimulationOptions;
 import cbit.vcell.solver.Simulation;
 import cbit.vcell.solver.SimulationJob;
@@ -132,6 +133,10 @@ public class BiomodelPdfServerResource extends AbstractServerResource implements
 			doc.setRootElement(root);
 			XMLOutputter xmlOut = new XMLOutputter();
 			resultString = xmlOut.outputString(doc);
+			
+			PDFWriter PdfWriter = new PDFWriter();
+			
+			
 			return resultString;
 			
 		} catch (PermissionException e) {
