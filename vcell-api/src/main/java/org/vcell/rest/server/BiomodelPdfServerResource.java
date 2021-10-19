@@ -27,6 +27,11 @@ import org.vcell.rest.VCellApiApplication.AuthenticationPolicy;
 import org.vcell.solver.nfsim.NFsimXMLWriter;
 import org.vcell.util.PermissionException;
 import org.vcell.util.document.User;
+
+import com.lowagie.text.Chapter;
+import com.lowagie.text.DocumentException;
+import com.lowagie.text.Section;
+
 import org.vcell.rest.common.BiomodelPdfResource;
 
 import cbit.vcell.biomodel.BioModel;
