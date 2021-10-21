@@ -57,15 +57,13 @@ public class BiomodelMatLabServerResource extends AbstractServerResource impleme
     protected void doInit() throws ResourceException {
         String simTaskIdAttribute = getAttribute(VCellApiApplication.BIOMODELID);
         
-        String appName = getRequest().getOriginalRef().getQueryAsForm(true).getFirstValue("appname");
+        appName = getRequest().getOriginalRef().getQueryAsForm(true).getFirstValue("appname");
         try {
         	appName = URLEncoder.encode(appName,"UTF-8");
         } catch (UnsupportedEncodingException e) {
         	// TODO Auto-generated catch block
         	e.printStackTrace();
         }
-
-        appName = getRequest().getOriginalRef().getQueryAsForm(true).getFirstValue("appname");
         
         if (simTaskIdAttribute != null) {
             this.biomodelid = simTaskIdAttribute;
@@ -123,7 +121,7 @@ public class BiomodelMatLabServerResource extends AbstractServerResource impleme
 			};
 			String biomodelVCML = restDatabaseService.query(bmsr,vcellUser);
 			BioModel bioModel = XmlHelper.XMLToBioModel(new XMLSource(biomodelVCML));
-			SimulationContext simulationContext = bioModel.getSimulationContext(appName);
+			SimulationContext simulationContext = bioModel.getSimulationContexts(appName);
 			MathMapping mathMapping = simulationContext.createNewMathMapping();
 			MathDescription mathDesc = mathMapping.getMathDescription();
 			VCAssert.assertValid(mathDesc);
