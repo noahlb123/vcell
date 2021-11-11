@@ -282,6 +282,7 @@ public class TestRestServerBlinov extends Restlet{
 				rootRouter.attach("/"+BIOMODEL+"/{"+BIOMODELID+"}/"+BNGL_DOWNLOAD, BiomodelBNGLServerResource.class);
 				rootRouter.attach("/"+BIOMODEL+"/{"+BIOMODELID+"}/"+MATLAB_DOWNLOAD, BiomodelMatLabServerResource.class);
 				rootRouter.attach("/"+BIOMODEL+"/{"+BIOMODELID+"}/"+NFSIM_DOWNLOAD, BiomodelNFSimServerResource.class);
+				rootRouter.attach("/"+MODELBRICK, BiomodelVCMLModelInfoResource.class);//Expects queryparameters
 				return rootRouter;
 			}
 

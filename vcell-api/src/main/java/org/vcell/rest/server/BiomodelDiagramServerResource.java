@@ -98,7 +98,7 @@ public class BiomodelDiagramServerResource extends AbstractServerResource implem
 	}
 
 	
-	private String getBiomodelVCML(User vcellUser) {
+	protected String getBiomodelVCML(User vcellUser) {
 //		if (!application.authenticate(getRequest(), getResponse())){
 //			// not authenticated
 //			return new SimulationTaskRepresentation[0];
