@@ -29,7 +29,8 @@ import java.util.zip.ZipOutputStream;
 
 public class CLIUtils {
 	// timeout for compiled solver running long jobs; default 12 hours
-	public static long EXECUTABLE_MAX_WALLCLOK_MILLIS = 10000;
+	// public static long EXECUTABLE_MAX_WALLCLOK_MILLIS = 40000;
+	public static long EXECUTABLE_MAX_WALLCLOK_MILLIS = 0;
 
     // Docker hardcode path
     // Note: Docker Working Directory and Singularity working directory works in different way.
@@ -346,7 +347,6 @@ public class CLIUtils {
                             }
 
                             CLIUtils.updateDatasetStatusYml(sedmlLocation, oo.getId(), dataset.getId(), Status.SUCCEEDED, outDir);
-                           // CLIUtils.updateTaskStatusYml(sedmlLocation, task.getId(), Status.SUCCEEDED, outDir);
                         }
                         if (!supportedDataset) {
                             System.err.println("Dataset " + dataset.getId() + " references unsupported RepeatedTask and is being skipped");
@@ -652,14 +652,18 @@ public class CLIUtils {
         printProcessErrors(process, "","Failed generating status YAML\n");
     }
 
-    public static void updateTaskStatusYml(String sedmlName, String taskName, Status taskStatus, String outDir ,String duration , String algorithm) throws IOException, InterruptedException {
-        Process process = execShellCommand(new String[]{python, statusPath.toString(), "updateTaskStatus", sedmlName, taskName, taskStatus.toString(), outDir,duration,algorithm}).start();
-        printProcessErrors(process, "","Failed updating task status YAML\n");
-
+    public static void updateTaskStatusYml(String sedmlName, String taskName, Status taskStatus, String outDir, String duration, String algorithm) throws IOException, InterruptedException {
+    	algorithm = algorithm.toUpperCase(Locale.ROOT);
+    	algorithm = algorithm.replace("KISAO:", "KISAO_");
+        Process process = execShellCommand(new String[]{python, statusPath.toString(), "updateTaskStatus", sedmlName, taskName, taskStatus.toString(), outDir, duration, algorithm}).start();
+        printProcessErrors(process, "", "Failed updating task status YAML\n");
     }
-
-    public static void finalStatusUpdate(Status simStatus, String outDir) throws IOException, InterruptedException {
-        Process process = execShellCommand(new String[]{python, statusPath.toString(), "simStatus", simStatus.toString(), outDir}).start();
+    public static void updateSedmlDocStatusYml(String sedmlName, Status sedmlDocStatus, String outDir) throws IOException, InterruptedException {
+        Process process = execShellCommand(new String[]{python, statusPath.toString(), "updateSedmlDocStatus", sedmlName, sedmlDocStatus.toString(), outDir}).start();
+        printProcessErrors(process, "", "Failed updating sedml document status YAML\n");
+    }
+    public static void updateOmexStatusYml(Status simStatus, String outDir, String duration) throws IOException, InterruptedException {
+        Process process = execShellCommand(new String[]{python, statusPath.toString(), "updateOmexStatus", simStatus.toString(), outDir, duration}).start();
         printProcessErrors(process, "","");
     }
 
@@ -687,10 +691,10 @@ public class CLIUtils {
         Process process = execShellCommand(new String[]{python, statusPath.toString(), "setOutputMessage", sedmlAbsolutePath, entityId, outDir, entityType, message}).start();
         printProcessErrors(process, "","Failed updating task status YAML\n");
     }
-    // category - exception class, ex RuntimeException
+    // type - exception class, ex RuntimeException
     // message  - exception message
-    public static void setExceptionMessage(String sedmlAbsolutePath, String entityId, String outDir, String entityType, String category , String message) throws IOException, InterruptedException {
-        Process process = execShellCommand(new String[]{python, statusPath.toString(), "setExceptionMessage", sedmlAbsolutePath, entityId, outDir, entityType, category, message}).start();
+    public static void setExceptionMessage(String sedmlAbsolutePath, String entityId, String outDir, String entityType, String type , String message) throws IOException, InterruptedException {
+        Process process = execShellCommand(new String[]{python, statusPath.toString(), "setExceptionMessage", sedmlAbsolutePath, entityId, outDir, entityType, type, message}).start();
         printProcessErrors(process, "","Failed updating task status YAML\n");
     }
 

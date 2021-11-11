@@ -1,32 +1,34 @@
 name: CI-application-containers
 
 on:
-  workflow_dispatch:
-    inputs:
-      debug_enabled:
-        description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'     
-        required: false
-        default: 'false'
+  release:
+    types: [published]
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
+    - name: Get the VCell version from tags
+      id: version
+      run: echo ::set-output name=tag::$(echo ${GITHUB_REF:10})
     - name: set global environment variables
       run: |
-        echo "VCELL_TAG=`git rev-parse HEAD | cut -c -7`" >> $GITHUB_ENV
+        echo "VCELL_TAG=`git rev-parse --short HEAD`" >> $GITHUB_ENV
         echo "VCELL_REPO_NAMESPACE=ghcr.io/virtualcell" >> $GITHUB_ENV
+        echo "VCELL_DEPLOY_REMOTE_DIR=/share/apps/vcell3/deployed_github" >> $GITHUB_ENV
+        echo "VCELL_MANAGER_NODE=vcellapi-beta.cam.uchc.edu" >> $GITHUB_ENV
+    - name: setup ssh-agent
+      uses: webfactory/ssh-agent@v0.5.3
+      with:
+        ssh-private-key: ${{ secrets.VC_KEY }}
     - name: get installer secrets
-      shell: bash
       run: |
+        ssh-keyscan vcellapi-beta.cam.uchc.edu >> ~/.ssh/known_hosts
         sudo mkdir /usr/local/deploy
         sudo chmod 777 /usr/local/deploy
         cd /usr/local/deploy
-        echo "StrictHostKeyChecking no" >> ssh_prepend
-        echo "UserKnownHostsFile=/dev/null" >> ssh_prepend
-        cat /etc/ssh/ssh_config >> ssh_prepend
-        sudo cp -f ssh_prepend /etc/ssh/ssh_config
-        sshpass -p ${{ secrets.CD_FULL_PASS }} scp ${{ secrets.CD_FULL_USER }}@biosim-submit-ext.cam.uchc.edu:/share/apps/vcell3/deployed_docker/deploy_dir.tar .
+        scp ${{ secrets.CD_FULL_USER }}@${VCELL_MANAGER_NODE}:${VCELL_DEPLOY_REMOTE_DIR}/deploy_dir.tar .
         cd ..
         sudo tar -xvf deploy/deploy_dir.tar
         sudo chmod 777 -R deploy
@@ -52,12 +54,15 @@ jobs:
       shell: bash
       run: |
         for CONTAINER in vcell-api vcell-batch vcell-clientgen vcell-data vcell-db vcell-mongo vcell-sched vcell-submit vcell-web;\
-        do docker tag ${{ env.VCELL_REPO_NAMESPACE }}/$CONTAINER:${{ env.VCELL_TAG }} ${{ env.VCELL_REPO_NAMESPACE }}/$CONTAINER:latest;\
-        docker push --all-tags ${{ env.VCELL_REPO_NAMESPACE }}/$CONTAINER;\
+        do docker tag ${VCELL_REPO_NAMESPACE}/$CONTAINER:${VCELL_TAG} ${VCELL_REPO_NAMESPACE}/$CONTAINER:latest;\
+        docker tag ${VCELL_REPO_NAMESPACE}/$CONTAINER:${VCELL_TAG} ${VCELL_REPO_NAMESPACE}/$CONTAINER:${{ steps.version.outputs.tag }};\
+        docker push --all-tags ${VCELL_REPO_NAMESPACE}/$CONTAINER;\
         done
         cd docker/build/singularity-vm
-        singularity push -U $(ls *img) oras://${{ env.VCELL_REPO_NAMESPACE }}/vcell-batch-singularity:${{ env.VCELL_TAG }}
+        singularity push -U $(ls *img) oras://${VCELL_REPO_NAMESPACE}/vcell-batch-singularity:${VCELL_TAG}
+        singularity push -U $(ls *img) oras://${VCELL_REPO_NAMESPACE}/vcell-batch-singularity:${{ steps.version.outputs.tag }}
+        singularity push -U $(ls *img) oras://${VCELL_REPO_NAMESPACE}/vcell-batch-singularity:latest
         
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3
-      if: ${{ failure() || github.event.inputs.debug_enabled }}
+      if: ${{ failure() }}

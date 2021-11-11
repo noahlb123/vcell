@@ -75,10 +75,10 @@ def status_yml(omex_file: str, out_dir: str):
             #outputs_dict["outputs"][report].update({"status": "QUEUED"})
 
         for task in task_list:
-            exception = {"category":None, "message":None}
+            exception = {"type":None, "message":None}
             tasks_dict["tasks"].append({"id":task ,"status": "QUEUED", "exception": exception, "skipReason": None, "output": None, "duration": None, "algorithm": None,"simulatorDetails":None})
 
-        exception = {"category":None, "message":None}
+        exception = {"type":None, "message":None}
         sed_doc_dict = {"location":sedml, "status":"QUEUED", "exception":exception, "skipReason":None, "output":None, "duration":None}
         sed_doc_dict.update(outputs_dict)
         sed_doc_dict.update(tasks_dict)
@@ -120,7 +120,7 @@ def dump_json_dict(json_path: str,yaml_dict: str):
         json.dump(yaml_dict,json_out,sort_keys=True,indent=4)
 
 
-def update_status(sedml: str, task: str, status: str, out_dir: str ,duration: str, algorithm: str):
+def update_task_status(sedml: str, task: str, status: str, out_dir: str, duration: str, algorithm: str):
     # Hardcoded because name is static
     yaml_dict = get_yaml_as_str(os.path.join(out_dir, "log.yml"))
     for sedml_list in yaml_dict['sedDocuments']:
@@ -133,14 +133,35 @@ def update_status(sedml: str, task: str, status: str, out_dir: str ,duration: st
                     taskList['duration'] = duration
                     taskList['algorithm'] = algorithm
                     # update individual SED-ML status
-                    if taskList['status'] == 'QUEUED' or taskList['status']== 'SUCCEEDED':
-                        sedml_list['status'] = 'SUCCEEDED'
-                    else:
-                        sedml_list['status'] = 'FAILED'
+                    # if taskList['status'] == 'QUEUED' or taskList['status']== 'SUCCEEDED':
+                    #     sedml_list['status'] = 'SUCCEEDED'
+                    # else:
+                    #     sedml_list['status'] = 'FAILED'
 
     status_yaml_path = os.path.join(out_dir, "log.yml")
-
     # Convert json to yaml # Save new yaml
+    dump_yaml_dict(status_yaml_path, yaml_dict=yaml_dict, out_dir=out_dir)
+
+
+def update_sedml_doc_status(sedml: str, status: str, out_dir: str):
+    # Hardcoded because name is static
+    yaml_dict = get_yaml_as_str(os.path.join(out_dir, "log.yml"))
+    for sedml_list in yaml_dict['sedDocuments']:
+        if sedml.endswith(sedml_list["location"]):
+            sedml_name_nested = sedml_list["location"]
+            sedml_list['status'] = status
+
+    status_yaml_path = os.path.join(out_dir, "log.yml")
+    dump_yaml_dict(status_yaml_path, yaml_dict=yaml_dict, out_dir=out_dir)
+
+
+def update_omex_status(status: str, out_dir: str, duration: str):
+
+    yaml_dict = get_yaml_as_str(os.path.join(out_dir, "log.yml"))
+    yaml_dict['status'] = status
+    yaml_dict['duration'] = duration
+
+    status_yaml_path = os.path.join(out_dir, "log.yml")
     dump_yaml_dict(status_yaml_path, yaml_dict=yaml_dict, out_dir=out_dir)
 
 
@@ -182,18 +203,6 @@ def update_dataset_status(sedml: str, report: str, dataset: str, status: str, ou
     dump_yaml_dict(status_yaml_path, yaml_dict=yaml_dict, out_dir=out_dir)
 
 
-def sim_status(status: str, out_dir: str):
-
-    yaml_dict = get_yaml_as_str(os.path.join(out_dir, "log.yml"))
-
-    # Update simulation status
-    yaml_dict['status'] = status
-
-    status_yaml_path = os.path.join(out_dir, "log.yml")
-
-    # Convert json to yaml # Save new yaml
-    dump_yaml_dict(status_yaml_path, yaml_dict=yaml_dict, out_dir=out_dir)
-
 #
 # sedmlAbsolutePath - full path to location of the actual sedml file (document) used as input
 # entityId          - (actually, the name) ex: task_0_0 for task, or biomodel_20754836.sedml for a sedml document
@@ -203,25 +212,29 @@ def sim_status(status: str, out_dir: str):
 def set_output_message(sedmlAbsolutePath:str, entityId:str, out_dir:str, entityType:str , message:str):
 
     yaml_dict = get_yaml_as_str(os.path.join(out_dir, "log.yml"))
-    for sedml_list in yaml_dict['sedDocuments']:
-        if sedmlAbsolutePath.endswith(sedml_list["location"]):
-            sedml_name_nested = sedml_list["location"]
-            # Update sedml document status
-            if entityType == 'sedml':
-                if sedml_name_nested == entityId:
-                    sedml_list['output'] = message
+    if entityType == 'omex':
+        # update omex archive output message
+        yaml_dict['output'] = message
+    else:
+        for sedml_list in yaml_dict['sedDocuments']:
+            if sedmlAbsolutePath.endswith(sedml_list["location"]):
+                sedml_name_nested = sedml_list["location"]
+                # Update sedml document output message
+                if entityType == 'sedml':
+                    if sedml_name_nested == entityId:
+                        sedml_list['output'] = message
             
-            # Update task status
-            if entityType == 'task':
-                for taskList in sedml_list['tasks']:
-                    if taskList['id'] == entityId:
-                        taskList['output'] = message
+                # Update task output message
+                if entityType == 'task':
+                    for taskList in sedml_list['tasks']:
+                        if taskList['id'] == entityId:
+                            taskList['output'] = message
+                        
     status_yaml_path = os.path.join(out_dir, "log.yml")
-
     # Convert json to yaml # Save new yaml
     dump_yaml_dict(status_yaml_path, yaml_dict=yaml_dict, out_dir=out_dir)
 
-def set_exception_message(sedmlAbsolutePath:str, entityId:str, out_dir:str, entityType:str, category:str, message:str):
+def set_exception_message(sedmlAbsolutePath:str, entityId:str, out_dir:str, entityType:str, type:str, message:str):
 
     yaml_dict = get_yaml_as_str(os.path.join(out_dir, "log.yml"))
     for sedml_list in yaml_dict['sedDocuments']:
@@ -233,7 +246,7 @@ def set_exception_message(sedmlAbsolutePath:str, entityId:str, out_dir:str, enti
             if entityType == 'sedml':
                 if sedml_name_nested == entityId:
                     exc = sedml_list['exception']
-                    exc['category'] = category
+                    exc['type'] = type
                     exc['message'] = message
             
             # Update task status
@@ -241,7 +254,7 @@ def set_exception_message(sedmlAbsolutePath:str, entityId:str, out_dir:str, enti
                 for taskList in sedml_list['tasks']:
                     if taskList['id'] == entityId:
                         exc = taskList['exception']
-                        exc['category'] = category
+                        exc['type'] = type
                         exc['message'] = message
     status_yaml_path = os.path.join(out_dir, "log.yml")
 
@@ -251,8 +264,9 @@ def set_exception_message(sedmlAbsolutePath:str, entityId:str, out_dir:str, enti
 if __name__ == "__main__":
     fire.Fire({
         'genStatusYaml': status_yml,
-        'updateTaskStatus': update_status,
-        'simStatus': sim_status,
+        'updateTaskStatus': update_task_status,
+        'updateSedmlDocStatus': update_sedml_doc_status,
+        'updateOmexStatus': update_omex_status,
         'updateDataSetStatus': update_dataset_status,
         'setOutputMessage' : set_output_message,
         'setExceptionMessage' : set_exception_message,

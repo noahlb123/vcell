@@ -4,6 +4,7 @@ import cbit.vcell.solver.ode.ODESolverResultSet;
 import cbit.vcell.xml.ExternalDocInfo;
 import org.apache.commons.lang3.ArrayUtils;
 import org.jlibsedml.*;
+import org.vcell.cli.CLIUtils.Status;
 import org.vcell.cli.vcml.VCMLHandler;
 //import org.vcell.util.FileUtils;
 import org.vcell.cli.vcml.VcmlOmexConversion;
@@ -112,6 +113,13 @@ public class CLIStandalone {
     			StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     	}
    	}
+    static void writeDetailedErrorList(String outputBaseDir, String s) throws IOException {
+    	if(isBatchExecution(outputBaseDir)) {
+    		String dest = outputBaseDir + File.separator + "detailedErrorLog.txt";
+    		Files.write(Paths.get(dest), (s + "\n").getBytes(), 
+    			StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+    	}
+   	}
     // we make a list with the omex files that contain (some) spatial simulations (FVSolverStandalone solver)
     static void writeSpatialList(String outputBaseDir, String s) throws IOException {
     	if(isBatchExecution(outputBaseDir)) {
@@ -155,6 +163,8 @@ public class CLIStandalone {
         File sedmlPathwith2dand3d = null;
         SedML sedmlFromPseudo = null;
 
+        long startTimeOmex = System.currentTimeMillis();
+
         try {
             cliHandler = new CLIHandler(args);
             inputFile = cliHandler.getInputFilePath();
@@ -180,10 +190,15 @@ public class CLIStandalone {
         
         // from here on, we need to collect errors, since some subtasks may succeed while other do not
         // we now have the log file created, so that we also have a place to put them
-        boolean somethingFailed = false;
+        boolean oneSedmlDocumentSucceeded = false;
         
-        for (String sedmlLocation : sedmlLocations) {
-        	
+    	String logOmexMessage = "";
+    	String logOmexError = "";		// not used for now
+        for (String sedmlLocation : sedmlLocations) {		// for each sedml document
+
+        	// this variable is set correctly but it is not used!!! because the way we define success
+            boolean somethingFailed = false;		// shows that the current document suffered a partial or total failuri
+            
         	String logDocumentMessage = "Initializing sedml document... ";
         	String logDocumentError = "";
         	
@@ -202,6 +217,7 @@ public class CLIStandalone {
                 if (CLIUtils.isWindowsPlatform) sedmlNameSplit = sedmlLocation.split("\\\\", -2);
                 else sedmlNameSplit = sedmlLocation.split("/", -2);
                 sedmlName = sedmlNameSplit[sedmlNameSplit.length - 1];
+                logOmexMessage += "Processing " + sedmlName + ". ";
 
                 nModels = sedmlFromOmex.getModels().size();
                 nTasks = sedmlFromOmex.getTasks().size();
@@ -246,13 +262,15 @@ public class CLIStandalone {
             } catch (Exception e) {
             	String prefix = "SED-ML processing for " + sedmlLocation + " failed with error: ";
             	logDocumentError = prefix + e.getMessage();
-            	String category = e.getClass().getSimpleName();
+            	String type = e.getClass().getSimpleName();
                 CLIUtils.setOutputMessage(sedmlLocation, sedmlName, outputDir, "sedml", logDocumentMessage);
-                CLIUtils.setExceptionMessage(sedmlLocation, sedmlName, outputDir, "sedml", category, logDocumentError);
+                CLIUtils.setExceptionMessage(sedmlLocation, sedmlName, outputDir, "sedml", type, logDocumentError);
+                writeDetailedErrorList(outputBaseDir, bioModelBaseName + ",  doc:    " + type + ": " + logDocumentError);
             	
                 System.err.println(prefix + e.getMessage());
                 e.printStackTrace(System.err);
                 somethingFailed = true;
+                CLIUtils.updateSedmlDocStatusYml(sedmlLocation, Status.FAILED, outputDir);
                 continue;
             }
             // Run solvers and make reports; all failures/exceptions are being caught
@@ -268,12 +286,22 @@ public class CLIStandalone {
             	resultsHash = solverHandler.simulateAllTasks(externalDocInfo, sedml, outDirForCurrentSedml, outputDir, outputBaseDir, sedmlLocation);
             } catch(Exception e) {
             	somethingFailed = true;
+            	logDocumentError = e.getMessage();		// probably the hash is empty
             	// still possible to have some data in the hash, from some task that was successful - that would be partial success
             }
+            // resultHash contains only non-null values, so there must be at least some data in the result set
             if (resultsHash.size() != 0) {
             	logDocumentMessage += "done. ";
+            	//
+            	// WARNING!!! the logic here is that if at least one task produces some results we declare the sedml document status as successful
+            	// that will include spatial simulations for which we don't produce reports or plots!
+            	//
+            	oneSedmlDocumentSucceeded = true;
+            	CLIUtils.updateSedmlDocStatusYml(sedmlLocation, Status.SUCCEEDED, outputDir);
             	try {
             		if(resultsHash.containsValue(null)) {		// some tasks failed, but not all
+            			// in the current implementation this cannot happen! 
+            			// we don't put in the hash any null value
             			logDocumentMessage += "Failed to execute one or more tasks. ";
             		}
             		logDocumentMessage += "Generating outputs... ";
@@ -295,46 +323,48 @@ public class CLIStandalone {
                 	org.apache.commons.io.FileUtils.deleteDirectory(new File(String.valueOf(sedmlPath2d3d)));	// removing temp path generated from python
             	} catch (Exception e) {
                     somethingFailed = true;
-                	logDocumentError = e.getMessage();
-                	String category = e.getClass().getSimpleName();
+                	logDocumentError += e.getMessage();
+                	String type = e.getClass().getSimpleName();
                     CLIUtils.setOutputMessage(sedmlLocation, sedmlName, outputDir, "sedml", logDocumentMessage);
-                    CLIUtils.setExceptionMessage(sedmlLocation, sedmlName, outputDir, "sedml", category, logDocumentError);
+                    CLIUtils.setExceptionMessage(sedmlLocation, sedmlName, outputDir, "sedml", type, logDocumentError);
+                    writeDetailedErrorList(outputBaseDir, bioModelBaseName + ",  doc:    " + type + ": " + logDocumentError);
                     org.apache.commons.io.FileUtils.deleteDirectory(new File(String.valueOf(sedmlPath2d3d)));	// removing temp path generated from python
                     continue;
             	}
             } else {           	// no data in the hash -> no results to show
             	Exception e = new RuntimeException("Failure executing the tasks within the sed document. ");
-            	logDocumentError = e.getMessage();
-            	String category = e.getClass().getSimpleName();
+            	logDocumentError += e.getMessage();
+            	String type = e.getClass().getSimpleName();
                 CLIUtils.setOutputMessage(sedmlLocation, sedmlName, outputDir, "sedml", logDocumentMessage);
-                CLIUtils.setExceptionMessage(sedmlLocation, sedmlName, outputDir, "sedml", category, logDocumentError);
+                CLIUtils.setExceptionMessage(sedmlLocation, sedmlName, outputDir, "sedml", type, logDocumentError);
+                writeDetailedErrorList(outputBaseDir, bioModelBaseName + ",  doc:    " + type + ": " + logDocumentError);
+                CLIUtils.updateSedmlDocStatusYml(sedmlLocation, Status.FAILED, outputDir);
                 org.apache.commons.io.FileUtils.deleteDirectory(new File(String.valueOf(sedmlPath2d3d)));	// removing temp path generated from python
                 continue;		// no point to create h5 or zip files with no data
             }
 
             // archiving res files
             CLIUtils.zipResFiles(new File(outputDir));
-
-//            if (resultsHash.containsValue(null) || reportsHash == null) {
-//            	// something went wrong but we didn't catch any exception
-//                somethingFailed = true;
-//            	Exception e = new RuntimeException("One or more errors encountered while executing the sed document. ");
-//            	// no data in the hash -> no results to show
-//            	logDocumentError = e.getMessage();
-//            	String category = e.getClass().getSimpleName();
-//                CLIUtils.setExceptionMessage(sedmlLocation, sedmlName, outputDir, "sedml", category, logDocumentError);
-//            }
             CLIUtils.setOutputMessage(sedmlLocation, sedmlName, outputDir, "sedml", logDocumentMessage);
         }
         omexHandler.deleteExtractedOmex();
-        if (somethingFailed) {
-            String error = "One or more errors encountered while executing archive " + args[1];
-            CLIUtils.finalStatusUpdate(CLIUtils.Status.FAILED, outputDir);
-            System.err.println(error);
-            writeErrorList(outputBaseDir, bioModelBaseName);
+        
+        long endTimeOmex = System.currentTimeMillis();
+		long elapsedTime = endTimeOmex - startTimeOmex;
+		int duration = (int)Math.ceil(elapsedTime / 1000.0);
+     
+        //
+        // success if at least one of the documents in the omex archive is successful
+        //
+        if(oneSedmlDocumentSucceeded) {
+        	CLIUtils.updateOmexStatusYml(CLIUtils.Status.SUCCEEDED, outputDir, duration + "");
+        } else {
+        	String error = "All sedml documents in this archive failed to execute";
+        	CLIUtils.updateOmexStatusYml(CLIUtils.Status.FAILED, outputDir, duration + "");
+        	System.err.println(error);
+        	writeErrorList(outputBaseDir, bioModelBaseName);
         }
-    	// TODO: write a CLIUtils.setOutputMessage for the omex document
-
+        CLIUtils.setOutputMessage("", "", outputDir, "omex", logOmexMessage);
     }
 
     private static void singleExecVcml(String[] args) throws Exception {
