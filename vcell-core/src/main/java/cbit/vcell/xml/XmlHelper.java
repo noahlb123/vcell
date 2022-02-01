@@ -547,7 +547,7 @@ public class XmlHelper {
 	}
 
 	public static List<VCDocument> sedmlToBioModel(VCLogger transLogger, ExternalDocInfo externalDocInfo,
-												   SedML sedml, List<AbstractTask> tasks, String sedmlFileLocation) throws Exception {
+												   SedML sedml, List<AbstractTask> tasks, String sedmlFileLocation, boolean exactMatchOnly) throws Exception {
 		if(sedml.getModels().isEmpty()) {
 			throw new Exception("No models found in SED-ML document");
 		}
@@ -639,7 +639,7 @@ public class XmlHelper {
 				// identify the vCell solvers that would match best the sedml solver kisao id
 
 				// try to find a match in the ontology tree
-				SolverDescription solverDescription = SolverUtilities.matchSolverWithKisaoId(kisaoID);
+				SolverDescription solverDescription = SolverUtilities.matchSolverWithKisaoId(kisaoID, exactMatchOnly);
 				if (solverDescription != null) {
 					System.out.println("Task (id='"+selectedTask.getId()+"') is compatible, solver match found in ontology: '" + kisaoID + "' matched to " + solverDescription);
 				} else {
@@ -745,6 +745,7 @@ public class XmlHelper {
 				MathMappingCallback callback = new MathMappingCallbackTaskAdapter(null);
 				matchingSimulationContext.refreshMathDescription(callback, NetworkGenerationRequirements.ComputeFullStandardTimeout);
 				Simulation newSimulation = new Simulation(matchingSimulationContext.getMathDescription());
+				newSimulation.setSimulationOwner(matchingSimulationContext);
 				if (selectedTask instanceof Task) {
 					String newSimName = selectedTask.getId();
 					if(SEDMLUtil.getName(selectedTask) != null) {

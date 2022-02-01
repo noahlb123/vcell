@@ -3605,7 +3605,7 @@ public class ClientRequestManager
 						for (SedML sedml : sedmls) {
 							// default to import all tasks
 							List<VCDocument> vcdocs = XmlHelper.sedmlToBioModel(transLogger, externalDocInfo,
-									sedml, null, null);
+									sedml, null, null, false);
 							for (VCDocument vcdoc : vcdocs) {
 								docs.add(vcdoc);
 							}
@@ -3740,7 +3740,7 @@ public class ClientRequestManager
 								SedML sedml = sedmls.get(0);						
 								// default to import all tasks
 								docs = XmlHelper.sedmlToBioModel(transLogger, externalDocInfo,
-										sedml, null, externalDocInfo.getFile().getAbsolutePath());
+										sedml, null, externalDocInfo.getFile().getAbsolutePath(), false);
 								isSEDML = true;
 							} else { // unknown XML format
 								throw new RuntimeException(
@@ -3815,6 +3815,9 @@ public class ClientRequestManager
 							hashTable.put("doc", doc);
 						}
 					}
+				} catch(Exception ex) {
+					ex.printStackTrace();
+					// TODO: check why getMdiManager().createNewDocumentWindow(windowManager) fails sometimes
 				} finally {
 					if (!inNewWindow) {
 						getMdiManager().unBlockWindow(requester.getManagerID());
@@ -3838,8 +3841,10 @@ public class ClientRequestManager
 					}
 					if (isSEDML) {
 						List<DocumentWindowManager> windowManagers = (List<DocumentWindowManager>) hashTable.get("managers");
-						for (DocumentWindowManager manager : windowManagers) {
-							((BioModelWindowManager) manager).specialLayout();
+						if(windowManagers != null) {
+							for (DocumentWindowManager manager : windowManagers) {
+								((BioModelWindowManager) manager).specialLayout();
+							}
 						}
 					}
 				}

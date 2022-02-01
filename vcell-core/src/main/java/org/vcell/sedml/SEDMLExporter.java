@@ -11,6 +11,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,6 +83,8 @@ import org.w3c.dom.Element;
 import cbit.util.xml.XmlUtil;
 import cbit.vcell.biomodel.BioModel;
 import cbit.vcell.biomodel.ModelUnitConverter;
+import cbit.vcell.clientdb.DocumentManager;
+import cbit.vcell.mapping.GeometryContext;
 import cbit.vcell.mapping.MathMapping;
 import cbit.vcell.mapping.MathSymbolMapping;
 import cbit.vcell.mapping.SimulationContext;
@@ -95,6 +98,7 @@ import cbit.vcell.model.Kinetics.KineticsParameter;
 import cbit.vcell.model.Model.ModelParameter;
 import cbit.vcell.model.Model.ReservedSymbol;
 import cbit.vcell.model.Model.ReservedSymbolRole;
+import cbit.vcell.model.ModelProcess;
 import cbit.vcell.model.ModelQuantity;
 import cbit.vcell.model.ModelUnitSystem;
 import cbit.vcell.model.ProxyParameter;
@@ -104,6 +108,7 @@ import cbit.vcell.model.Structure.StructureSize;
 import cbit.vcell.parser.Expression;
 import cbit.vcell.parser.ExpressionException;
 import cbit.vcell.parser.SymbolTableEntry;
+import cbit.vcell.server.SimulationJobStatusPersistent;
 import cbit.vcell.solver.AnnotatedFunction;
 import cbit.vcell.solver.ConstantArraySpec;
 import cbit.vcell.solver.ErrorTolerance;
@@ -112,6 +117,7 @@ import cbit.vcell.solver.NonspatialStochHybridOptions;
 import cbit.vcell.solver.NonspatialStochSimOptions;
 import cbit.vcell.solver.Simulation;
 import cbit.vcell.solver.SimulationJob;
+import cbit.vcell.solver.SimulationOwner;
 import cbit.vcell.solver.SolverDescription;
 import cbit.vcell.solver.SolverTaskDescription;
 import cbit.vcell.solver.TimeBounds;
@@ -127,15 +133,17 @@ public class SEDMLExporter {
 	private cbit.vcell.biomodel.BioModel vcBioModel = null;
 	private ArrayList<String> sbmlFilePathStrAbsoluteList = new ArrayList<String>();
 	private ArrayList<String> sedmlFilePathStrAbsoluteList = new ArrayList<String>();
+	private List<Simulation> simsToExport = null;
 
 	private static String DATAGENERATOR_TIME_NAME = "time";
 	private static String DATAGENERATOR_TIME_SYMBOL = "t";
 	
-	public SEDMLExporter(BioModel argBiomodel, int argLevel, int argVersion) {
+	public SEDMLExporter(BioModel argBiomodel, int argLevel, int argVersion, List<Simulation> argSimsToExport) {
 		super();
 		this.vcBioModel = argBiomodel;
 		this.sedmlLevel = argLevel;
 		this.sedmlVersion = argVersion;
+		this.simsToExport = argSimsToExport;
 	}
 	
 	public static void main(String[] args) {
@@ -151,9 +159,9 @@ public class SEDMLExporter {
 			bioModel.refreshDependencies();
 			
 			// invoke the SEDMLEXporter
-			SEDMLExporter sedmlExporter = new SEDMLExporter(bioModel, 1, 1);
+			SEDMLExporter sedmlExporter = new SEDMLExporter(bioModel, 1, 1, null);
 			String absolutePath = "c:\\dan\\SEDML";
-			String sedmlStr = sedmlExporter.getSEDMLFile(absolutePath, "SEDML2", false, false);
+			String sedmlStr = sedmlExporter.getSEDMLFile(absolutePath, "SEDML2", false, false, false);
 //			String absolutePath = ResourceUtil.getUserHomeDir().getAbsolutePath();
 			String outputName = absolutePath+ "\\" + TokenMangler.mangleToSName(bioModel.getName()) + ".sedml";
 			XmlUtil.writeXMLStringToFile(sedmlStr, outputName, true);
@@ -166,7 +174,7 @@ public class SEDMLExporter {
 		}
 	}
 	
-	public String getSEDMLFile(String sPath, String sBaseFileName, boolean bForceVCML, boolean bFromOmex) {
+	public String getSEDMLFile(String sPath, String sBaseFileName, boolean bForceVCML, boolean bHasDataOnly, boolean bFromOmex) {
 
 		// Create an SEDMLDocument and create the SEDMLModel from the document, so that other details can be added to it in translateBioModel()
 		SEDMLDocument sedmlDocument = new SEDMLDocument(this.sedmlLevel, this.sedmlVersion);
@@ -191,14 +199,14 @@ public class SEDMLExporter {
 		sedmlModel.setAdditionalNamespaces(nsList);
 
 		
-		translateBioModelToSedML(sPath, sBaseFileName, bForceVCML, bFromOmex);
+		translateBioModelToSedML(sPath, sBaseFileName, bForceVCML, bHasDataOnly, bFromOmex);
 
 		// write SEDML document into SEDML writer, so that the SEDML str can be retrieved
 		return sedmlDocument.writeDocumentToString();
 	}
 
 
-	private void translateBioModelToSedML(String savePath, String sBaseFileName, boolean bForceVCML, boolean bFromOmex) {		// true if invoked for omex export, false if for sedml
+	private void translateBioModelToSedML(String savePath, String sBaseFileName, boolean bForceVCML, boolean bHasDataOnly, boolean bFromOmex) {		// true if invoked for omex export, false if for sedml
 		sbmlFilePathStrAbsoluteList.clear();
 		// models
 		try {
@@ -215,15 +223,6 @@ public class SEDMLExporter {
 			String sedmlNotesStr = "";
 
 			for (SimulationContext simContext : simContexts) {
-				// check if structure sizes are set. If not, get a structure from the model, and set its size 
-				// (thro' the structureMappings in the geometry of the simContext); invoke the structureSizeEvaluator 
-				// to compute and set the sizes of the remaining structures.
-				if (!simContext.getGeometryContext().isAllSizeSpecifiedPositive()) {
-					Structure structure = simContext.getModel().getStructure(0);
-					double structureSize = 1.0;
-					StructureMapping structMapping = simContext.getGeometryContext().getStructureMapping(structure); 
-					StructureSizeSolver.updateAbsoluteStructureSizes(simContext, structure, structureSize, structMapping.getSizeParameter().getUnitDefinition());
-				}
 
 				// Export the application itself to SBML, with default overrides
 				String sbmlString = null;
@@ -235,6 +234,19 @@ public class SEDMLExporter {
 				boolean sbmlExportFailed = false;
 				if(!bForceVCML) {	// we try to save to SBML
 					try {
+						// check if structure sizes are set. If not, get a structure from the model, and set its size 
+						// (thro' the structureMappings in the geometry of the simContext); invoke the structureSizeEvaluator 
+						// to compute and set the sizes of the remaining structures.
+						if (!simContext.getGeometryContext().isAllSizeSpecifiedPositive()) {
+							Structure structure = simContext.getModel().getStructure(0);
+							double structureSize = 1.0;
+							StructureMapping structMapping = simContext.getGeometryContext().getStructureMapping(structure); 
+							StructureSizeSolver.updateAbsoluteStructureSizes(simContext, structure, structureSize, structMapping.getSizeParameter().getUnitDefinition());
+
+//							StructureMapping structureMapping = simContext.getGeometryContext().getStructureMappings()[0];
+//							StructureSizeSolver.updateAbsoluteStructureSizes(simContext, structureMapping.getStructure(), 1.0, structureMapping.getSizeParameter().getUnitDefinition());
+
+						}
 						SBMLExporter sbmlExporter = new SBMLExporter(vcBioModel, level, version, isSpatial);
 						sbmlExporter.setSelectedSimContext(simContext);
 						sbmlExporter.setSelectedSimulationJob(null);	// no sim job
@@ -290,11 +302,16 @@ public class SEDMLExporter {
 				// -------
 				// create sedml objects (simulation, task, datagenerators, report, plot) for each simulation in simcontext 
 				// -------
+				
 
 				int simCount = 0;
 				String taskRef = null;
 				int overrideCount = 0;
 				for (Simulation vcSimulation : simContext.getSimulations()) {
+					if (bHasDataOnly) {
+						// skip simulations not present in hash
+						if (!simsToExport.contains(vcSimulation)) continue;
+					}
 
 					// 1 -------> check compatibility
 					// if simContext is non-spatial stochastic, check if sim is histogram; if so, skip it, it can't be encoded in sedml 1.x
@@ -945,6 +962,9 @@ public class SEDMLExporter {
         	if (sedmlNotesStr.length() > 0) {
 	        	sedmlNotesStr = "\n\tThe following applications in the VCell model were not exported to VCell : " + sedmlNotesStr;
 	        	sedmlModel.addNote(createNotesElement(sedmlNotesStr));
+        	}
+        	if(sedmlModel.getModels() != null && sedmlModel.getModels().size() > 1) {
+        		System.out.println("Number of models in the sedml is " + sedmlModel.getModels().size());
         	}
 	
 

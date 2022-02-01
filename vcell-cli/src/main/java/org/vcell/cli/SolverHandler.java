@@ -32,6 +32,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 public class SolverHandler {
+	
+	public int countBioModels = 0;		// number of biomodels in this sedml file
+	public int countSuccessfulSimulationRuns = 0;	// number of simulations that we ran successfully for this sedml file
 
     private static void sanityCheck(VCDocument doc) throws Exception {
         if (doc == null) {
@@ -54,7 +57,7 @@ public class SolverHandler {
     }
 
 
-    public HashMap<String, ODESolverResultSet> simulateAllTasks(ExternalDocInfo externalDocInfo, SedML sedml, File outputDirForSedml, String outDir, String outputBaseDir, String sedmlLocation) throws Exception {
+    public HashMap<String, ODESolverResultSet> simulateAllTasks(CLIUtils utils, ExternalDocInfo externalDocInfo, SedML sedml, File outputDirForSedml, String outDir, String outputBaseDir, String sedmlLocation, boolean keepTempFiles, boolean exactMatchOnly) throws Exception {
         // create the VCDocument(s) (bioModel(s) + application(s) + simulation(s)), do sanity checks
         cbit.util.xml.VCLogger sedmlImportLogger = new LocalLogger();
         String inputFile = externalDocInfo.getFile().getAbsolutePath();
@@ -68,15 +71,17 @@ public class SolverHandler {
         Simulation[] sims = null;
         String outDirRoot = outputDirForSedml.toString().substring(0, outputDirForSedml.toString().lastIndexOf(System.getProperty("file.separator")));
         try {
-            docs = XmlHelper.sedmlToBioModel(sedmlImportLogger, externalDocInfo, sedml, null, sedmlLocation);
+            docs = XmlHelper.sedmlToBioModel(sedmlImportLogger, externalDocInfo, sedml, null, sedmlLocation, exactMatchOnly);
         } catch (Exception e) {
             System.err.println("Unable to Parse SED-ML into Bio-Model, failed with err: " + e.getMessage());
             throw e;
         }
+        if(docs != null) {
+        	countBioModels = docs.size();
+        }
 
         int simulationCount = 0;
         int bioModelCount = 0;
-        boolean keepTempFiles = false;
         boolean hasSomeSpatial = false;
         boolean bTimeoutFound = false;
         
@@ -106,7 +111,10 @@ public class SolverHandler {
             	SolverDescription sd = null;
             	
                 try {
+                	SimulationOwner so = sim.getSimulationOwner();
                 	sim = new TempSimulation(sim, false);
+                	sim.setSimulationOwner(so);
+                	
                 	std = sim.getSolverTaskDescription();
                 	sd = std.getSolverDescription();
                 	kisao = sd.getKisao();
@@ -118,10 +126,13 @@ public class SolverHandler {
                 	Solver solver = SolverFactory.createSolver(outputDirForSedml, simTask, false);
                 	logTaskMessage += "done. Starting simulation... ";
 
-                	if(solver instanceof FVSolverStandalone) {
+                	if(sd.isSpatial()) {
                 		hasSomeSpatial = true;
+                	}
+//                	if(solver instanceof FVSolverStandalone) {
+//                		hasSomeSpatial = true;
 //                		throw new RuntimeException("FVSolverStandalone timeout failure.");
-                	} 
+//                	} 
 //                	else 
                 	if (solver instanceof AbstractCompiledSolver) {
                         ((AbstractCompiledSolver) solver).runSolver();
@@ -136,7 +147,7 @@ public class SolverHandler {
                         } else {
                         	String str = "Solver results are not compatible with CSV format. ";
                             System.err.println(str);
-                            keepTempFiles = true;		// temp fix for Jasraj
+//                            keepTempFiles = true;		// temp fix for Jasraj
 //                        	throw new RuntimeException(str);
                         }
                     } else if (solver instanceof AbstractJavaSolver) {
@@ -167,8 +178,9 @@ public class SolverHandler {
 
                 		String msg = "Running simulation " + simTask.getSimulation().getName() + ", " + elapsedTime + " ms";
                 		System.out.println(msg);
-                        CLIUtils.updateTaskStatusYml(sedmlLocation, sim.getImportedTaskID(), CLIUtils.Status.SUCCEEDED, outDir ,duration + "", kisao);
-                        CLIUtils.setOutputMessage(sedmlLocation, sim.getImportedTaskID(), outDir, "task", logTaskMessage);
+                		countSuccessfulSimulationRuns++;	// we only count the number of simulations (tasks) that succeeded
+                		utils.updateTaskStatusYml(sedmlLocation, sim.getImportedTaskID(), CLIUtils.Status.SUCCEEDED, outDir ,duration + "", kisao);
+                		utils.setOutputMessage(sedmlLocation, sim.getImportedTaskID(), outDir, "task", logTaskMessage);
                         CLIUtils.drawBreakLine("-", 100);
                     } else {
                         System.err.println("Solver status: " + solver.getSolverStatus().getStatus());
@@ -192,7 +204,7 @@ public class SolverHandler {
             			System.err.println();
             			logTaskError += str;
             		} else {
-            			CLIUtils.updateTaskStatusYml(sedmlLocation, sim.getImportedTaskID(), CLIUtils.Status.FAILED, outDir ,duration + "", kisao);
+            			utils.updateTaskStatusYml(sedmlLocation, sim.getImportedTaskID(), CLIUtils.Status.FAILED, outDir ,duration + "", kisao);
             		}
 //                    CLIUtils.finalStatusUpdate(CLIUtils.Status.FAILED, outDir);
                     if (e.getMessage() != null) {
@@ -203,8 +215,8 @@ public class SolverHandler {
                     	logTaskError += (error + ". ");
                     }
                     String type = e.getClass().getSimpleName();
-                    CLIUtils.setOutputMessage(sedmlLocation, sim.getImportedTaskID(), outDir, "task", logTaskMessage);
-                    CLIUtils.setExceptionMessage(sedmlLocation, sim.getImportedTaskID(), outDir, "task", type, logTaskError);
+                    utils.setOutputMessage(sedmlLocation, sim.getImportedTaskID(), outDir, "task", logTaskMessage);
+                    utils.setExceptionMessage(sedmlLocation, sim.getImportedTaskID(), outDir, "task", type, logTaskError);
                     String sdl = "";
                     if(sd != null && sd.getShortDisplayLabel() != null && !sd.getShortDisplayLabel().isEmpty()) {
                     	sdl = sd.getShortDisplayLabel();
@@ -225,7 +237,14 @@ public class SolverHandler {
                 }
                 if(odeSolverResultSet != null) {
                     resultsHash.put(sim.getImportedTaskID(), odeSolverResultSet);
+                } else {
+                	resultsHash.put(sim.getImportedTaskID(), null);	// if any task fails, we still put it in the hash with a null value
                 }
+                
+                //
+                // CLIUtils.exportPDE2HDF5(sim, outputDirForSedml);
+                //
+
                 
                 if(keepTempFiles == false) {
                 	CLIUtils.removeIntermediarySimFiles(outputDirForSedml);
@@ -241,6 +260,7 @@ public class SolverHandler {
         return resultsHash;
     }
 
+    @Deprecated
     public HashMap<String, ODESolverResultSet> simulateAllVcmlTasks(File vcmlPath, File outputDir) throws Exception {
         // create the VCDocument(s) (bioModel(s) + application(s) + simulation(s)), do sanity checks
         List<VCDocument> docs = null;

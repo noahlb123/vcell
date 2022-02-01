@@ -2111,6 +2111,7 @@ private void setFormatChoices_0(/*boolean bMembrane*/){
 		Object currentSelection = cb.getSelectedItem();
 		cb.removeAllItems();
 		cb.addItem(ExportFormat.CSV);
+		cb.addItem(ExportFormat.HDF5);
 		cb.addItem(ExportFormat.QUICKTIME);
 		cb.addItem(ExportFormat.GIF);
 		cb.addItem(ExportFormat.ANIMATED_GIF);
@@ -2467,7 +2468,7 @@ private void startExport() {
 			break;
 		}
 		
-		
+		case HDF5:
 		case CSV: {
 			// check for membrane variables... warn for 3D geometry...
 			// one gets the whole nine yards by index, not generally useful... except for a few people like Boris :)
@@ -2690,9 +2691,10 @@ private void updateChoiceVariableType(PDEDataContext pdeDataContext){
 private void updateExportFormat(ExportFormat exportFormat) {
 	getJRadioButtonSlice().setEnabled(true);
 	switch (exportFormat) {
-		case CSV: {
+		case CSV:
+		case HDF5: {
 			BeanUtils.enableComponents(getJPanelSelections(), true);
-			getJRadioButtonFull().setEnabled(false);
+			getJRadioButtonFull().setEnabled(exportFormat == ExportFormat.HDF5);
 			getJRadioButtonROI().setSelected(true);
 			break;
 		}

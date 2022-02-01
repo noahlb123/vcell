@@ -1,11 +1,42 @@
 package org.vcell.cli;
 
+import cbit.vcell.export.server.ExportConstants;
+import cbit.vcell.export.server.ExportFormat;
+import cbit.vcell.export.server.ExportOutput;
+import cbit.vcell.export.server.ExportServiceImpl;
+import cbit.vcell.export.server.ExportSpecs;
+import cbit.vcell.export.server.FileDataContainerManager;
+import cbit.vcell.export.server.FormatSpecificSpecs;
+import cbit.vcell.export.server.GeometrySpecs;
+import cbit.vcell.export.server.JobRequest;
+import cbit.vcell.export.server.TimeSpecs;
+import cbit.vcell.export.server.VariableSpecs;
+import cbit.vcell.mapping.SimulationContext;
+import cbit.vcell.message.server.bootstrap.client.RemoteProxyVCellConnectionFactory.RemoteProxyException;
+import cbit.vcell.model.Species;
+import cbit.vcell.biomodel.BioModel;
+import cbit.vcell.client.server.ClientExportController;
+import cbit.vcell.client.server.ClientServerManager;
+import cbit.vcell.export.server.ASCIIExporter;
+import cbit.vcell.export.server.ASCIISpecs;
+import cbit.vcell.export.server.ASCIISpecs.csvRoiLayout;
+import cbit.vcell.export.server.ExportSpecs.ExportParamScanInfo;
 import cbit.vcell.parser.Expression;
 import cbit.vcell.parser.ExpressionException;
 import cbit.vcell.parser.SimpleSymbolTable;
 import cbit.vcell.parser.SymbolTable;
 import cbit.vcell.resource.OperatingSystemInfo;
 import cbit.vcell.resource.PropertyLoader;
+import cbit.vcell.simdata.Cachetable;
+import cbit.vcell.simdata.DataServerImpl;
+import cbit.vcell.simdata.DataSetControllerImpl;
+import cbit.vcell.simdata.OutputContext;
+import cbit.vcell.simdata.SpatialSelection;
+import cbit.vcell.solver.AnnotatedFunction;
+import cbit.vcell.solver.OutputFunctionContext;
+import cbit.vcell.solver.TimeBounds;
+import cbit.vcell.solver.VCSimulationDataIdentifier;
+import cbit.vcell.solver.VCSimulationIdentifier;
 import cbit.vcell.solver.ode.ODESolverResultSet;
 import cbit.vcell.util.ColumnDescription;
 import org.apache.commons.io.FileUtils;
@@ -16,6 +47,10 @@ import org.jlibsedml.execution.IXPathToVariableIDResolver;
 import org.jlibsedml.modelsupport.SBMLSupport;
 import org.vcell.sedml.SEDMLUtil;
 import org.vcell.stochtest.TimeSeriesMultitrialData;
+import org.vcell.util.DataAccessException;
+import org.vcell.util.document.KeyValue;
+import org.vcell.util.document.User;
+import org.vcell.util.document.VCDataIdentifier;
 
 import java.io.*;
 import java.nio.file.*;
@@ -40,12 +75,13 @@ public class CLIUtils {
     private static final Path homeDir = Paths.get(currentWorkingDir.normalize().toString());
     // user.dir is not working for windows
 //    private static final Path homeDir = Paths.get(String.valueOf(System.getProperty("user.dir")));
-    private static final Path workingDirectory = Paths.get("/usr/local/app/vcell/installDir");
+    private static final String defaultWorkingDir = "/usr/local/app/vcell/installDir";
+    private Path workingDirectory = Paths.get(defaultWorkingDir);
     // Submodule path for VCell_CLI_UTILS
-    private static final Path utilPath = Paths.get(workingDirectory.toString(), "python", "vcell_cli_utils");
-    private static final Path cliUtilPath = Paths.get(utilPath.toString(), "vcell_cli_utils");
-    private static final Path cliPath = Paths.get(cliUtilPath.toString(), "cli.py");
-    private static final Path statusPath = Paths.get(cliUtilPath.toString(), "status.py");
+    private Path utilPath = Paths.get(workingDirectory.toString(), "python", "vcell_cli_utils");
+    private Path cliUtilPath = Paths.get(utilPath.toString(), "vcell_cli_utils");
+    private Path cliPath = Paths.get(cliUtilPath.toString(), "cli.py");
+    private Path statusPath = Paths.get(cliUtilPath.toString(), "status.py");
 
 
     // Absolute Submodule path for VCell_CLI_UTILS
@@ -102,7 +138,15 @@ public class CLIUtils {
         }
     }
 
-
+    public void recalculatePaths() {
+    	String wd = PropertyLoader.getProperty(PropertyLoader.cliWorkingDir, defaultWorkingDir);
+        workingDirectory = Paths.get(wd);
+        utilPath = Paths.get(workingDirectory.toString(), "python", "vcell_cli_utils");
+        cliUtilPath = Paths.get(utilPath.toString(), "vcell_cli_utils");
+        cliPath = Paths.get(cliUtilPath.toString(), "cli.py");
+        statusPath = Paths.get(cliUtilPath.toString(), "status.py");
+    }
+    
     // Breakline
     public static void drawBreakLine(String breakString, int times) {
         System.out.println(breakString + StringUtils.repeat(breakString, times));
@@ -257,13 +301,151 @@ public class CLIUtils {
         }
     }
 
-    public static HashMap<String, File> generateReportsAsCSV(SedML sedml, HashMap<String, ODESolverResultSet> resultsHash, File outDirForCurrentSedml, String outDir, String sedmlLocation) {
+    public static void exportPDE2HDF5(cbit.vcell.solver.Simulation sim, File userDir) throws DataAccessException, IOException {
+        
+        SimulationContext sc = (SimulationContext)sim.getSimulationOwner();
+        BioModel bm = sc.getBioModel();
+    	
+//        VCSimulationIdentifier vcSimID = new VCSimulationIdentifier(sim.getKey(), sim.getSimulationInfo().getVersion().getOwner());
+        User user = new User(userDir.getName(), null);
+        VCSimulationIdentifier vcSimID = new VCSimulationIdentifier(sim.getKey(), user);
+        
+        if(sim.getScanCount() > 1) {
+        	throw new IllegalArgumentException("Parameter scans to be implemented");
+        }
+    	VCSimulationDataIdentifier vcId = new VCSimulationDataIdentifier(vcSimID, 0);
+    	
+        Species[] species = bm.getModel().getSpecies();
+        String[] variableNames = new String[species.length];
+        for(int i = 0; i<species.length; i++) {
+        	variableNames[i] = species[i].getCommonName();
+        }
+    	VariableSpecs variableSpecs = new VariableSpecs(variableNames, ExportConstants.VARIABLE_MULTI);
+    	
+        DataSetControllerImpl dsControllerImpl = new DataSetControllerImpl(null, userDir.getParentFile(), null);
+        double[] dataSetTimes = dsControllerImpl.getDataSetTimes(vcId);
+    	TimeSpecs timeSpecs = new TimeSpecs(0,dataSetTimes.length-1, dataSetTimes, ExportConstants.TIME_RANGE);
+    	timeSpecs = new TimeSpecs(0, 0, dataSetTimes, ExportConstants.TIME_RANGE);
+
+    	
+    	
+    	int geoMode = ExportConstants.GEOMETRY_FULL;
+    	SpatialSelection[] selections = new SpatialSelection[0];
+    	selections = null;
+    	int axis = 2;
+    	int sliceNumber = 0;
+        GeometrySpecs geometrySpecs = new GeometrySpecs(selections, axis, sliceNumber, geoMode);
+         
+        ExportConstants.DataType dataType = ExportConstants.DataType.PDE_VARIABLE_DATA;
+        boolean switchRowsColumns = false;
+        
+        // String simulationName,VCSimulationIdentifier vcSimulationIdentifier,ExportParamScanInfo exportParamScanInfo
+        ExportSpecs.SimNameSimDataID snsdi= new ExportSpecs.SimNameSimDataID(sim.getName(), vcSimID, null);
+        ExportSpecs.SimNameSimDataID[] simNameSimDataIDs = { snsdi };
+        int[] exportMultipleParamScans = null;
+        boolean isHDF5 = true;
+        FormatSpecificSpecs formatSpecificSpecs = new ASCIISpecs(ExportFormat.CSV, dataType, switchRowsColumns, simNameSimDataIDs, exportMultipleParamScans, csvRoiLayout.var_time_val, isHDF5);
+        
+        OutputFunctionContext ofc = sc.getOutputFunctionContext();
+        ArrayList<AnnotatedFunction> outputFunctionsList = ofc.getOutputFunctionsList();
+        AnnotatedFunction[] af = outputFunctionsList.toArray(new AnnotatedFunction[0]);
+        OutputContext outputContext = new OutputContext(af);
+        ExportServiceImpl exportServiceImpl = new ExportServiceImpl();
+        ASCIIExporter ae = new ASCIIExporter(exportServiceImpl);
+        String contextName = bm.getName() + ":" + sc.getName();
+        ExportSpecs exportSpecs = new ExportSpecs(vcId, ExportFormat.HDF5, variableSpecs, timeSpecs, geometrySpecs, formatSpecificSpecs, sim.getName(), contextName);
+        DataServerImpl dataServerImpl = new DataServerImpl(dsControllerImpl, exportServiceImpl);
+        FileDataContainerManager fileDataContainerManager = new FileDataContainerManager();
+        
+        JobRequest jobRequest = JobRequest.createExportJobRequest(vcId.getOwner());
+        
+        Collection<ExportOutput > eo = ae.makeASCIIData(outputContext, jobRequest, vcId.getOwner(), dataServerImpl, exportSpecs, fileDataContainerManager);
+        Iterator<ExportOutput> iterator = eo.iterator();
+        ExportOutput aaa = iterator.next();
+        
+        
+
+    }
+    public HashMap<String, File> generateReportsAsCSV(SedML sedml, HashMap<String, ODESolverResultSet> resultsHash, File outDirForCurrentSedml, String outDir, String sedmlLocation) throws DataAccessException, IOException {
         // finally, the real work
         HashMap<String, File> reportsHash = new HashMap<>();
         List<Output> ooo = sedml.getOutputs();
         for (Output oo : ooo) {
             if (!(oo instanceof Report)) {
                 System.out.println("Ignoring unsupported output `" + oo.getId() + "` while CSV generation.");
+                
+//                BioModel bm = null;
+//                
+//        		VCDataIdentifier vcId = new VCDataIdentifier() {
+//        			public User getOwner() {	return new User("nouser", null);		}
+//        			public KeyValue getDataKey() { return null; }
+//        			public String getID()  {	return "mydata";					}
+//        		};
+//                ExportFormat format = ExportFormat.HDF5;
+//                
+//                Object[] variables = {"ala", "bala" };
+//                String[] variableNames = new String[variables.length];
+//            	VariableSpecs variableSpecs = new VariableSpecs(variableNames, ExportConstants.VARIABLE_MULTI);
+//            	
+//            	double[] timePoints = {0.0, 0.1, 0.2};
+//            	TimeSpecs timeSpecs = new TimeSpecs(0, 100, timePoints, ExportConstants.TIME_RANGE);
+//
+//            	int geoMode = ExportConstants.GEOMETRY_FULL;
+//            	SpatialSelection[] selections = new SpatialSelection[0];
+//            	int axis = 3;
+//            	int sliceNumber = 0;
+//                GeometrySpecs geometrySpecs = new GeometrySpecs(selections, axis, sliceNumber, geoMode);
+//                
+//                ExportConstants.DataType dataType = ExportConstants.DataType.PDE_VARIABLE_DATA;
+//                boolean switchRowsColumns = false;
+//                ExportSpecs.SimNameSimDataID[] simNameSimDataIDs = { null, null };
+//                int[] exportMultipleParamScans = { };
+//                csvRoiLayout csvLayout = null;
+//                boolean isHDF5 = true;
+//                FormatSpecificSpecs formatSpecificSpecs = new ASCIISpecs(format, dataType, switchRowsColumns, simNameSimDataIDs, exportMultipleParamScans, csvLayout, isHDF5);
+//                
+//                String simulationName = null;
+//                String contextName = null;
+//                ExportSpecs exportSpecs = new ExportSpecs(vcId, format, variableSpecs, timeSpecs, geometrySpecs, formatSpecificSpecs, simulationName, contextName);
+//                
+//                SimulationContext sc = bm.getSimulationContext(0);
+//                
+//                OutputFunctionContext ofc = sc.getOutputFunctionContext();
+//                
+//                ArrayList<AnnotatedFunction> outputFunctionsList = ofc.getOutputFunctionsList();
+//                
+//                AnnotatedFunction[] af = outputFunctionsList.toArray(new AnnotatedFunction[0]);
+//                
+//                OutputContext outputContext = new OutputContext(af);
+//
+//                
+//                ExportServiceImpl exportServiceImpl = new ExportServiceImpl();
+//                ASCIIExporter ae = new ASCIIExporter(exportServiceImpl);
+//                
+//                
+//                DataSetControllerImpl dsControllerImpl = new DataSetControllerImpl(null, new File("C:\\TEMP\\eee"), null);
+//                
+//                
+//                
+//                DataServerImpl dataServerImpl = new DataServerImpl(dsControllerImpl, exportServiceImpl);
+//                
+//                
+//                FileDataContainerManager fileDataContainerManager = new FileDataContainerManager();
+//                
+//                JobRequest jobRequest = JobRequest.createExportJobRequest(vcId.getOwner());
+//                
+//                ae.makeASCIIData(outputContext, jobRequest, vcId.getOwner(), dataServerImpl, exportSpecs, fileDataContainerManager);
+//                
+//                ClientServerManager csm = null;
+//                ClientExportController cec = new ClientExportController(csm);
+//                if(csm != null && cec != null) {
+//                	try {
+//						cec.startExport(outputContext, exportSpecs);
+//					} catch (RemoteProxyException e) {
+//						e.printStackTrace();
+//					}
+//                }
+                
             } else {
                 System.out.println("Generating report `" + oo.getId() +"`.");
                 try {
@@ -345,9 +527,8 @@ public class CLIUtils {
             					}
 
                             }
-
-                            CLIUtils.updateDatasetStatusYml(sedmlLocation, oo.getId(), dataset.getId(), Status.SUCCEEDED, outDir);
                         }
+                        updateDatasetStatusYml(sedmlLocation, oo.getId(), dataset.getId(), Status.SUCCEEDED, outDir);
                         if (!supportedDataset) {
                             System.err.println("Dataset " + dataset.getId() + " references unsupported RepeatedTask and is being skipped");
                             continue;
@@ -573,17 +754,17 @@ public class CLIUtils {
 
     // Ignoring biosimulator_utils warnings with -W ignore flag
 
-    public static void genSedmlForSed2DAnd3D(String omexFilePath, String outputDir) throws IOException, InterruptedException {
+    public void genSedmlForSed2DAnd3D(String omexFilePath, String outputDir) throws IOException, InterruptedException {
         Process process = execShellCommand(new String[]{python, "-W", "ignore", cliPath.toString(), "genSedml2d3d", omexFilePath, outputDir}).start();
         printProcessErrors(process, "","Failed generating SED-ML for plot2d and 3D ");
     }
 
-    public static void execPlotOutputSedDoc(String omexFilePath, String outputDir)  throws IOException, InterruptedException {
+    public void execPlotOutputSedDoc(String omexFilePath, String outputDir)  throws IOException, InterruptedException {
         Process process = execShellCommand(new String[]{python, "-W", "ignore", cliPath.toString(), "execPlotOutputSedDoc", omexFilePath, outputDir}).start();
         printProcessErrors(process, "HDF conversion successful\n","HDF conversion failed\n");
     }
 
-    public static void convertCSVtoHDF(String omexFilePath, String outputDir) throws IOException, InterruptedException {
+    public void convertCSVtoHDF(String omexFilePath, String outputDir) throws IOException, InterruptedException {
 
         // Convert CSV to HDF5
         /*
@@ -598,7 +779,7 @@ public class CLIUtils {
         }
     }
 
-    public static void genPlotsPseudoSedml(String sedmlPath, String resultOutDir) throws IOException, InterruptedException {
+    public void genPlotsPseudoSedml(String sedmlPath, String resultOutDir) throws IOException, InterruptedException {
         Process process = execShellCommand(new String[]{python, cliPath.toString(), "genPlotsPseudoSedml", sedmlPath, resultOutDir}).start();
         printProcessErrors(process, "","");
     }
@@ -627,7 +808,7 @@ public class CLIUtils {
             status: SKIPPED
     status: SUCCEEDED
     * */
-    public static void generateStatusYaml(String omexPath, String outDir) throws IOException, InterruptedException {
+    public void generateStatusYaml(String omexPath, String outDir) throws IOException, InterruptedException {
         System.out.println("utilPath: " + utilPath);
         System.out.println("cliUtilPath: " + cliUtilPath);
         System.out.println("cliPath: " + cliPath);
@@ -652,32 +833,32 @@ public class CLIUtils {
         printProcessErrors(process, "","Failed generating status YAML\n");
     }
 
-    public static void updateTaskStatusYml(String sedmlName, String taskName, Status taskStatus, String outDir, String duration, String algorithm) throws IOException, InterruptedException {
+    public void updateTaskStatusYml(String sedmlName, String taskName, Status taskStatus, String outDir, String duration, String algorithm) throws IOException, InterruptedException {
     	algorithm = algorithm.toUpperCase(Locale.ROOT);
     	algorithm = algorithm.replace("KISAO:", "KISAO_");
         Process process = execShellCommand(new String[]{python, statusPath.toString(), "updateTaskStatus", sedmlName, taskName, taskStatus.toString(), outDir, duration, algorithm}).start();
         printProcessErrors(process, "", "Failed updating task status YAML\n");
     }
-    public static void updateSedmlDocStatusYml(String sedmlName, Status sedmlDocStatus, String outDir) throws IOException, InterruptedException {
+    public void updateSedmlDocStatusYml(String sedmlName, Status sedmlDocStatus, String outDir) throws IOException, InterruptedException {
         Process process = execShellCommand(new String[]{python, statusPath.toString(), "updateSedmlDocStatus", sedmlName, sedmlDocStatus.toString(), outDir}).start();
         printProcessErrors(process, "", "Failed updating sedml document status YAML\n");
     }
-    public static void updateOmexStatusYml(Status simStatus, String outDir, String duration) throws IOException, InterruptedException {
+    public void updateOmexStatusYml(Status simStatus, String outDir, String duration) throws IOException, InterruptedException {
         Process process = execShellCommand(new String[]{python, statusPath.toString(), "updateOmexStatus", simStatus.toString(), outDir, duration}).start();
         printProcessErrors(process, "","");
     }
 
-    public static void updateDatasetStatusYml(String sedmlName, String dataSet, String var, Status simStatus, String outDir) throws IOException, InterruptedException {
+    public void updateDatasetStatusYml(String sedmlName, String dataSet, String var, Status simStatus, String outDir) throws IOException, InterruptedException {
         Process process = execShellCommand(new String[]{python, statusPath.toString(), "updateDataSetStatus", sedmlName, dataSet, var, simStatus.toString(), outDir}).start();
         printProcessErrors(process, "","");
     }
 
-    public static void transposeVcmlCsv(String csvFilePath) throws IOException, InterruptedException {
+    public void transposeVcmlCsv(String csvFilePath) throws IOException, InterruptedException {
         Process process = execShellCommand(new String[]{python, cliPath.toString(), "transposeVcmlCsv", csvFilePath}).start();
         printProcessErrors(process, "","");
     }
 
-    public static void genPlots(String sedmlPath, String resultOutDir) throws IOException, InterruptedException {
+    public void genPlots(String sedmlPath, String resultOutDir) throws IOException, InterruptedException {
         Process process = execShellCommand(new String[]{python, cliPath.toString(), "genPlotPdfs", sedmlPath, resultOutDir}).start();
         printProcessErrors(process, "","");
     }
@@ -687,13 +868,13 @@ public class CLIUtils {
     // outDir            - path to directory where the log files will be placed
     // entityType        - string describing the entity type ex "task" for a task, or "sedml" for sedml document
     // message           - useful info about the execution of the entity (ex: task), could be human readable or concatenation of stdout and stderr
-    public static void setOutputMessage(String sedmlAbsolutePath, String entityId, String outDir, String entityType, String message) throws IOException, InterruptedException {
+    public void setOutputMessage(String sedmlAbsolutePath, String entityId, String outDir, String entityType, String message) throws IOException, InterruptedException {
         Process process = execShellCommand(new String[]{python, statusPath.toString(), "setOutputMessage", sedmlAbsolutePath, entityId, outDir, entityType, message}).start();
         printProcessErrors(process, "","Failed updating task status YAML\n");
     }
     // type - exception class, ex RuntimeException
     // message  - exception message
-    public static void setExceptionMessage(String sedmlAbsolutePath, String entityId, String outDir, String entityType, String type , String message) throws IOException, InterruptedException {
+    public void setExceptionMessage(String sedmlAbsolutePath, String entityId, String outDir, String entityType, String type , String message) throws IOException, InterruptedException {
         Process process = execShellCommand(new String[]{python, statusPath.toString(), "setExceptionMessage", sedmlAbsolutePath, entityId, outDir, entityType, type, message}).start();
         printProcessErrors(process, "","Failed updating task status YAML\n");
     }

@@ -1,5 +1,6 @@
 package org.vcell.cli;
 
+import cbit.vcell.resource.PropertyLoader;
 import cbit.vcell.solver.ode.ODESolverResultSet;
 import cbit.vcell.xml.ExternalDocInfo;
 import org.apache.commons.lang3.ArrayUtils;
@@ -7,7 +8,7 @@ import org.jlibsedml.*;
 import org.vcell.cli.CLIUtils.Status;
 import org.vcell.cli.vcml.VCMLHandler;
 //import org.vcell.util.FileUtils;
-import org.vcell.cli.vcml.VcmlOmexConversion;
+import org.vcell.cli.vcml.VcmlOmexConverter;
 import org.vcell.util.GenericExtensionFilter;
 import org.vcell.util.exe.Executable;
 
@@ -30,30 +31,69 @@ import java.util.List;
 public class CLIStandalone {
 	
     public static void main(String[] args) {
-
+    	
     	if(args == null || args.length < 4) {		// -i <input> -o <output>
     		System.err.println(CLIHandler.usage);
     		System.exit(1);
     	}
-
-        if(args[0].toLowerCase().equals("convert")) {
+    	
+        if(args[0].toLowerCase().equals("convert")) {	// convert -i <input> -o <output> [-vcml] [-hasDataOnly] [-makeLogsOnly]
             // VCML to OMex conversion
+        	CLIUtils utils = null;
         	try {
-        		VcmlOmexConversion.parseArgsAndConvert(ArrayUtils.remove(args, 0));
+        	   	utils = new CLIUtils();
+
+        		PropertyLoader.loadProperties();
+           		utils.recalculatePaths();
+           		
+        		VcmlOmexConverter.parseArgsAndConvert(ArrayUtils.remove(args, 0));
+        		
         	} catch(IOException e) {
         		e.printStackTrace(System.err);
         	}
         }
 
-        else {
+        else {										// -i <input> -o <output> [-keepTempFiles]
+
             File input = null;
+            boolean keepTempFiles = false;		// we keep simulation results for debugging, etc; set by -keepTempFiles CL argument
+            boolean exactMatchOnly = false;		// we run the solver only if it's an exact kisao match
+    		int position = 0;
+        	for(String s : args) {
+        		if("-keepTempFiles".equalsIgnoreCase(s)) {
+        			keepTempFiles = true;
+        			args = ArrayUtils.remove(args, position);
+        			break;
+        		}
+        		position++;
+        	}
+    		position = 0;
+        	for(String s : args) {
+        		if("-exactMatchOnly".equalsIgnoreCase(s)) {
+        			exactMatchOnly = true;
+        			args = ArrayUtils.remove(args, position);
+        			break;
+        		}
+        		position++;
+        	}
 
             // Arguments may not always be files, trying for other scenarios
             try {
-                input = new File(args[1]);
+              	input = new File(args[1]);
             } catch (Exception e1) {
                 // Non file or invalid argument received, let it pass, CLIHandler will handle the invalid (or non file) arguments
             }
+            CLIUtils utils = null;
+           	try {
+				utils = new CLIUtils();
+				
+        		PropertyLoader.loadProperties();
+           		utils.recalculatePaths();
+
+			} catch (IOException e1) {
+				e1.printStackTrace();
+                System.exit(1);			// can't do anything without CLIUtils
+			}
             
             Executable.setTimeoutMS(CLIUtils.EXECUTABLE_MAX_WALLCLOK_MILLIS);
 
@@ -64,6 +104,26 @@ public class CLIStandalone {
                 String[] inputFiles = input.list(filter);
                 if (inputFiles == null) System.out.println("No input files found in the directory");
                 assert inputFiles != null;
+                
+                // base name of the omex file
+                // -- if multiple sedml files in the omex, we display on multiple rows, one for each sedml
+                // current sed-ml file name
+                // error, if any
+                // number of models in sedml file
+                // number of sims in sedml file
+                // number of tasks in sedml file
+                // number of outputs in sedml file
+                // number of biomodels in sedml file
+                // number of succesful simulations that we managed to run
+                // -- we assume that the # of failures = # of tasks - # of successful simulations
+                String header = "BaseName,SedML,Error,Models,Sims,Tasks,Outputs,BioModels,NumSimsSuccessful";
+                try {
+					writeDetailedResultList(outputDir, header);
+				} catch (IOException e1) {
+					// not big deal, we just failed to make the header; we'll find out later what went wrong
+					e1.printStackTrace();
+				}
+                
                 for (String inputFile : inputFiles) {
                     File file = new File(input, inputFile);
                     System.out.println(file);
@@ -73,10 +133,10 @@ public class CLIStandalone {
                 			String bioModelBaseName = org.vcell.util.FileUtils.getBaseName(inputFile);
                 			args[3] = outputDir + File.separator + bioModelBaseName;
                 			Files.createDirectories(Paths.get(args[3]));
-                            singleExecOmex(outputDir, args);
+                            singleExecOmex(utils, outputDir, keepTempFiles, exactMatchOnly, args);
                         }
                         if (inputFile.endsWith("vcml")) {
-                            singleExecVcml(args);
+                            singleExecVcml(utils, args);
                         }
                     } catch (Exception e) {
                         e.printStackTrace(System.err);
@@ -85,9 +145,9 @@ public class CLIStandalone {
             } else {
                 try {
                     if (input == null || input.toString().endsWith("omex")) {
-                        singleExecOmex(args[3], args);
+                        singleExecOmex(utils, args[3], keepTempFiles, exactMatchOnly,  args);
                     } else if (input.toString().endsWith("vcml")) {
-                        singleExecVcml(args);
+                        singleExecVcml(utils, args);
                     } else {
                     	throw new RuntimeException("Invalid arguments: " + Arrays.toString(args));
                     }
@@ -104,7 +164,22 @@ public class CLIStandalone {
     	boolean isDirectory = Files.isDirectory(path);
     	return isDirectory;
     }
-    
+    // omex files that were fully successful
+    public static void writeFullSuccessList(String outputBaseDir, String s) throws IOException {
+    	if(isBatchExecution(outputBaseDir)) {
+    		String dest = outputBaseDir + File.separator + "fullSuccessLog.txt";
+    		Files.write(Paths.get(dest), (s + "\n").getBytes(), 
+    			StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+    	}
+   	}
+    // biomodels with no simulations and biomodels with no sim results (fired when building the omex files)
+    public static void writeSimErrorList(String outputBaseDir, String s) throws IOException {
+    	if(isBatchExecution(outputBaseDir)) {
+    		String dest = outputBaseDir + File.separator + "simsErrorLog.txt";
+    		Files.write(Paths.get(dest), (s + "\n").getBytes(), 
+    			StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+    	}
+   	}
     // we just make a list with the omex files that failed
     static void writeErrorList(String outputBaseDir, String s) throws IOException {
     	if(isBatchExecution(outputBaseDir)) {
@@ -113,9 +188,16 @@ public class CLIStandalone {
     			StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     	}
    	}
-    static void writeDetailedErrorList(String outputBaseDir, String s) throws IOException {
+    public static void writeDetailedErrorList(String outputBaseDir, String s) throws IOException {
     	if(isBatchExecution(outputBaseDir)) {
     		String dest = outputBaseDir + File.separator + "detailedErrorLog.txt";
+    		Files.write(Paths.get(dest), (s + "\n").getBytes(), 
+    			StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+    	}
+   	}
+    public static void writeDetailedResultList(String outputBaseDir, String s) throws IOException {
+    	if(isBatchExecution(outputBaseDir)) {
+    		String dest = outputBaseDir + File.separator + "detailedResultLog.txt";
     		Files.write(Paths.get(dest), (s + "\n").getBytes(), 
     			StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     	}
@@ -143,7 +225,7 @@ public class CLIStandalone {
     }
 
 
-    private static void singleExecOmex(String outputBaseDir, String[] args) throws Exception {
+    private static void singleExecOmex(CLIUtils utils, String outputBaseDir, boolean keepTempFiles, boolean exactMatchOnly, String[] args) throws Exception {
         OmexHandler omexHandler = null;
         CLIHandler cliHandler;
         String inputFile;
@@ -154,6 +236,7 @@ public class CLIStandalone {
         int nSimulations;
         int nSedml;
         int nTasks;
+        int nOutputs;
         List<Output> outputs;
         int nReportsCount = 0;
         int nPlots2DCount = 0;
@@ -183,20 +266,21 @@ public class CLIStandalone {
             omexHandler.deleteExtractedOmex();
             String error = exc.getMessage() + ", error for archive " + args[1];
             writeErrorList(outputBaseDir, bioModelBaseName);
+            writeDetailedResultList(outputBaseDir, bioModelBaseName + ", " + ",unknown error with the archive file");
             throw new Exception(error);
         }
         CLIUtils.checkInstallationError();					// check python installation
-        CLIUtils.generateStatusYaml(inputFile, outputDir);	// generate Status YAML
+        utils.generateStatusYaml(inputFile, outputDir);	// generate Status YAML
         
         // from here on, we need to collect errors, since some subtasks may succeed while other do not
         // we now have the log file created, so that we also have a place to put them
-        boolean oneSedmlDocumentSucceeded = false;
+        boolean oneSedmlDocumentSucceeded = false;	// set to true if at least one sedml document run is successful
+        boolean oneSedmlDocumentFailed = false;		// set to true if at least one sedml document run fails
         
     	String logOmexMessage = "";
     	String logOmexError = "";		// not used for now
         for (String sedmlLocation : sedmlLocations) {		// for each sedml document
 
-        	// this variable is set correctly but it is not used!!! because the way we define success
             boolean somethingFailed = false;		// shows that the current document suffered a partial or total failuri
             
         	String logDocumentMessage = "Initializing sedml document... ";
@@ -222,6 +306,7 @@ public class CLIStandalone {
                 nModels = sedmlFromOmex.getModels().size();
                 nTasks = sedmlFromOmex.getTasks().size();
                 outputs = sedmlFromOmex.getOutputs();
+                nOutputs = outputs.size();
                 for (Output output : outputs) {
                     if (output instanceof Report) nReportsCount++;
                     if (output instanceof Plot2D) nPlots2DCount++;
@@ -244,12 +329,14 @@ public class CLIStandalone {
                 CLIUtils.drawBreakLine("-", 100);
 
                 // For appending data for SED Plot2D and Plot3d to HDF5 files following a temp convention
-                CLIUtils.genSedmlForSed2DAnd3D(inputFile, outputDir);
+                utils.genSedmlForSed2DAnd3D(inputFile, outputDir);
                 // SED-ML file generated by python VCell_cli_util
                 sedmlPathwith2dand3d = new File(String.valueOf(sedmlPath2d3d), "simulation_" + sedmlName);
                 Path path = Paths.get(sedmlPathwith2dand3d.getAbsolutePath());
                 if(!Files.exists(path)) {
-                	throw new RuntimeException("Failed to create file " + sedmlPathwith2dand3d.getAbsolutePath());
+                	String message = "Failed to create file " + sedmlPathwith2dand3d.getAbsolutePath();
+                    writeDetailedResultList(outputBaseDir, bioModelBaseName + "," + sedmlName + "," + message);
+                	throw new RuntimeException(message);
                 }
                 
                 // Converting pseudo SED-ML to biomodel
@@ -263,14 +350,16 @@ public class CLIStandalone {
             	String prefix = "SED-ML processing for " + sedmlLocation + " failed with error: ";
             	logDocumentError = prefix + e.getMessage();
             	String type = e.getClass().getSimpleName();
-                CLIUtils.setOutputMessage(sedmlLocation, sedmlName, outputDir, "sedml", logDocumentMessage);
-                CLIUtils.setExceptionMessage(sedmlLocation, sedmlName, outputDir, "sedml", type, logDocumentError);
+            	utils.setOutputMessage(sedmlLocation, sedmlName, outputDir, "sedml", logDocumentMessage);
+            	utils.setExceptionMessage(sedmlLocation, sedmlName, outputDir, "sedml", type, logDocumentError);
                 writeDetailedErrorList(outputBaseDir, bioModelBaseName + ",  doc:    " + type + ": " + logDocumentError);
-            	
+                writeDetailedResultList(outputBaseDir, bioModelBaseName + "," + sedmlName + "," + logDocumentError);
+           	
                 System.err.println(prefix + e.getMessage());
                 e.printStackTrace(System.err);
                 somethingFailed = true;
-                CLIUtils.updateSedmlDocStatusYml(sedmlLocation, Status.FAILED, outputDir);
+                oneSedmlDocumentFailed = true;
+                utils.updateSedmlDocStatusYml(sedmlLocation, Status.FAILED, outputDir);
                 continue;
             }
             // Run solvers and make reports; all failures/exceptions are being caught
@@ -283,69 +372,92 @@ public class CLIStandalone {
             	String str = "Starting simulate all tasks... ";
             	System.out.println(str);
             	logDocumentMessage += str;
-            	resultsHash = solverHandler.simulateAllTasks(externalDocInfo, sedml, outDirForCurrentSedml, outputDir, outputBaseDir, sedmlLocation);
+            	resultsHash = solverHandler.simulateAllTasks(utils, externalDocInfo, sedml, outDirForCurrentSedml, outputDir, outputBaseDir, sedmlLocation, keepTempFiles, exactMatchOnly);
             } catch(Exception e) {
             	somethingFailed = true;
+            	oneSedmlDocumentFailed = true;
             	logDocumentError = e.getMessage();		// probably the hash is empty
             	// still possible to have some data in the hash, from some task that was successful - that would be partial success
             }
-            // resultHash contains only non-null values, so there must be at least some data in the result set
-            if (resultsHash.size() != 0) {
-            	logDocumentMessage += "done. ";
-            	//
-            	// WARNING!!! the logic here is that if at least one task produces some results we declare the sedml document status as successful
-            	// that will include spatial simulations for which we don't produce reports or plots!
-            	//
-            	oneSedmlDocumentSucceeded = true;
-            	CLIUtils.updateSedmlDocStatusYml(sedmlLocation, Status.SUCCEEDED, outputDir);
-            	try {
-            		if(resultsHash.containsValue(null)) {		// some tasks failed, but not all
-            			// in the current implementation this cannot happen! 
-            			// we don't put in the hash any null value
-            			logDocumentMessage += "Failed to execute one or more tasks. ";
-            		}
-            		logDocumentMessage += "Generating outputs... ";
-            		reportsHash = CLIUtils.generateReportsAsCSV(sedml, resultsHash, outDirForCurrentSedml, outputDir, sedmlLocation);
-            		if(reportsHash == null || reportsHash.size() == 0) {
-            			throw new RuntimeException("failed to generate any reports. ");
-            		}
-            		if(reportsHash.containsValue(null)) {
-            			logDocumentMessage += "failed to create one or more reports. ";
-            		} else {
-                    	logDocumentMessage += "done. ";
-            		}
+            
+            String message  = nModels + ",";
+            message += nSimulations + ",";
+            message += nTasks + ",";
+            message += nOutputs + ",";
+            message += solverHandler.countBioModels + ",";
+            message += solverHandler.countSuccessfulSimulationRuns;
+            writeDetailedResultList(outputBaseDir, bioModelBaseName + "," + sedmlName + ", ," + message);
 
-            		CLIUtils.execPlotOutputSedDoc(inputFile, outputDir);							// create the HDF5 file
-            		if(!containsExtension(outputDir, "h5")) {
-            			throw new RuntimeException("failed to generate the .h5 output file. ");
-            		}
-            		CLIUtils.genPlotsPseudoSedml(sedmlLocation, outDirForCurrentSedml.toString());	// generate the plots
-                	org.apache.commons.io.FileUtils.deleteDirectory(new File(String.valueOf(sedmlPath2d3d)));	// removing temp path generated from python
-            	} catch (Exception e) {
-                    somethingFailed = true;
-                	logDocumentError += e.getMessage();
-                	String type = e.getClass().getSimpleName();
-                    CLIUtils.setOutputMessage(sedmlLocation, sedmlName, outputDir, "sedml", logDocumentMessage);
-                    CLIUtils.setExceptionMessage(sedmlLocation, sedmlName, outputDir, "sedml", type, logDocumentError);
-                    writeDetailedErrorList(outputBaseDir, bioModelBaseName + ",  doc:    " + type + ": " + logDocumentError);
-                    org.apache.commons.io.FileUtils.deleteDirectory(new File(String.valueOf(sedmlPath2d3d)));	// removing temp path generated from python
-                    continue;
-            	}
-            } else {           	// no data in the hash -> no results to show
-            	Exception e = new RuntimeException("Failure executing the tasks within the sed document. ");
+        	//
+        	// WARNING!!! Current logic dictates that if any task fails we fail the sedml document
+        	// change implemented on Nov 11, 2021
+        	// Previous logic was that if at least one task produces some results we declare the sedml document status as successful
+        	// that will include spatial simulations for which we don't produce reports or plots!
+        	//
+        	try {
+        		if(resultsHash.containsValue(null)) {		// some tasks failed, but not all
+        			oneSedmlDocumentFailed = true;
+        			somethingFailed = true;
+        			logDocumentMessage += "Failed to execute one or more tasks. ";
+        		}
+        		logDocumentMessage += "Generating outputs... ";
+        		reportsHash = utils.generateReportsAsCSV(sedml, resultsHash, outDirForCurrentSedml, outputDir, sedmlLocation);
+        		if(reportsHash == null || reportsHash.size() == 0) {
+        			oneSedmlDocumentFailed = true;
+        			somethingFailed = true;
+        			String msg = "Failed to generate any reports. ";
+        			throw new RuntimeException(msg);
+        		}
+        		if(reportsHash.containsValue(null)) {
+        			oneSedmlDocumentFailed = true;
+        			somethingFailed = true;
+        			String msg = "Failed to generate one or more reports. ";
+        			logDocumentMessage += msg;
+        		} else {
+                	logDocumentMessage += "Done. ";
+        		}
+
+        		logDocumentMessage += "Generating HDF5 file... ";
+        		utils.execPlotOutputSedDoc(inputFile, outputDir);							// create the HDF5 file
+        		if(!containsExtension(outputDir, "h5")) {
+        			oneSedmlDocumentFailed = true;
+        			somethingFailed = true;
+        			throw new RuntimeException("Failed to generate the HDF5 output file. ");
+        		} else {
+        			logDocumentMessage += "Done. ";
+        		}
+        		utils.genPlotsPseudoSedml(sedmlLocation, outDirForCurrentSedml.toString());	// generate the plots
+    			oneSedmlDocumentSucceeded = true;
+        	} catch (Exception e) {
+                somethingFailed = true;
+                oneSedmlDocumentFailed = true;
             	logDocumentError += e.getMessage();
             	String type = e.getClass().getSimpleName();
-                CLIUtils.setOutputMessage(sedmlLocation, sedmlName, outputDir, "sedml", logDocumentMessage);
-                CLIUtils.setExceptionMessage(sedmlLocation, sedmlName, outputDir, "sedml", type, logDocumentError);
+            	utils.setOutputMessage(sedmlLocation, sedmlName, outputDir, "sedml", logDocumentMessage);
+            	utils.setExceptionMessage(sedmlLocation, sedmlName, outputDir, "sedml", type, logDocumentError);
                 writeDetailedErrorList(outputBaseDir, bioModelBaseName + ",  doc:    " + type + ": " + logDocumentError);
-                CLIUtils.updateSedmlDocStatusYml(sedmlLocation, Status.FAILED, outputDir);
+                utils.updateSedmlDocStatusYml(sedmlLocation, Status.FAILED, outputDir);
                 org.apache.commons.io.FileUtils.deleteDirectory(new File(String.valueOf(sedmlPath2d3d)));	// removing temp path generated from python
-                continue;		// no point to create h5 or zip files with no data
+                continue;
+        	}
+
+            if(somethingFailed == true) {		// something went wrong but no exception was fired
+            	Exception e = new RuntimeException("Failure executing the sed document. ");
+            	logDocumentError += e.getMessage();
+            	String type = e.getClass().getSimpleName();
+            	utils.setOutputMessage(sedmlLocation, sedmlName, outputDir, "sedml", logDocumentMessage);
+            	utils.setExceptionMessage(sedmlLocation, sedmlName, outputDir, "sedml", type, logDocumentError);
+                writeDetailedErrorList(outputBaseDir, bioModelBaseName + ",  doc:    " + type + ": " + logDocumentError);
+                utils.updateSedmlDocStatusYml(sedmlLocation, Status.FAILED, outputDir);
+                org.apache.commons.io.FileUtils.deleteDirectory(new File(String.valueOf(sedmlPath2d3d)));	// removing temp path generated from python
+                continue;
             }
+        	org.apache.commons.io.FileUtils.deleteDirectory(new File(String.valueOf(sedmlPath2d3d)));	// removing temp path generated from python
 
             // archiving res files
             CLIUtils.zipResFiles(new File(outputDir));
-            CLIUtils.setOutputMessage(sedmlLocation, sedmlName, outputDir, "sedml", logDocumentMessage);
+            utils.setOutputMessage(sedmlLocation, sedmlName, outputDir, "sedml", logDocumentMessage);
+            utils.updateSedmlDocStatusYml(sedmlLocation, Status.SUCCEEDED, outputDir);
         }
         omexHandler.deleteExtractedOmex();
         
@@ -354,20 +466,27 @@ public class CLIStandalone {
 		int duration = (int)Math.ceil(elapsedTime / 1000.0);
      
         //
-        // success if at least one of the documents in the omex archive is successful
+        // failure if at least one of the documents in the omex archive fails
         //
-        if(oneSedmlDocumentSucceeded) {
-        	CLIUtils.updateOmexStatusYml(CLIUtils.Status.SUCCEEDED, outputDir, duration + "");
-        } else {
-        	String error = "All sedml documents in this archive failed to execute";
-        	CLIUtils.updateOmexStatusYml(CLIUtils.Status.FAILED, outputDir, duration + "");
+        if(oneSedmlDocumentFailed) {
+        	String error = " All sedml documents in this archive failed to execute";
+        	if(oneSedmlDocumentSucceeded) {		// some succeeded, some failed
+        		error = " At least one document in this archive failed to execute";
+        	}
+        	utils.updateOmexStatusYml(CLIUtils.Status.FAILED, outputDir, duration + "");
         	System.err.println(error);
+        	logOmexMessage += error;
         	writeErrorList(outputBaseDir, bioModelBaseName);
+        } else {
+        	utils.updateOmexStatusYml(CLIUtils.Status.SUCCEEDED, outputDir, duration + "");
+        	writeFullSuccessList(outputBaseDir, bioModelBaseName);
+        	logOmexMessage += " Done";
         }
-        CLIUtils.setOutputMessage("", "", outputDir, "omex", logOmexMessage);
+        utils.setOutputMessage("null", "null", outputDir, "omex", logOmexMessage);
     }
 
-    private static void singleExecVcml(String[] args) throws Exception {
+    @Deprecated
+    private static void singleExecVcml(CLIUtils utils, String[] args) throws Exception {
         CLIHandler cliHandler;
         String inputFile;
         String outputDir;
@@ -408,7 +527,7 @@ public class CLIStandalone {
         for (String simName : resultsHash.keySet()) {
             String CSVFilePath = Paths.get(outDirForCurrentVcml.toString(), simName + ".csv").toString();
             CLIUtils.createCSVFromODEResultSet(resultsHash.get(simName), new File(CSVFilePath));
-            CLIUtils.transposeVcmlCsv(CSVFilePath);
+            utils.transposeVcmlCsv(CSVFilePath);
         }
 
         if (somethingFailed) {
